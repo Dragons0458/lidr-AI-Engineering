@@ -1,0 +1,27 @@
+from fastapi import FastAPI
+from app.routers.estimations import router as estimation_router
+from datetime import datetime
+
+app = FastAPI(
+    title="Estimation API",
+    description="""
+API para generar estimaciones de proyectos de software a partir de transcripciones de reuniones usando LLMs.
+
+### Funcionalidades:
+- Generación automática de estimaciones
+- Integración con modelos de IA
+- Métricas de uso (tokens, coste)
+
+### Endpoints principales:
+- POST /api/v1/estimate → Generar estimación
+- GET /health → Estado del servicio
+""",
+    version="1.0.0",
+)
+
+app.include_router(estimation_router, prefix="/api/v1")
+
+
+@app.get("/health")
+async def health():
+    return {"status": "ok", "timestamp": datetime.now().isoformat()}
