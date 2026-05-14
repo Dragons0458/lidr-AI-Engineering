@@ -14,6 +14,7 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 
 ### Endpoints principales:
 - POST /api/v1/estimate → Generar estimación
+- POST /api/v1/estimate/stream → Generar estimación en streaming
 - GET /health → Estado del servicio
 """,
     version="1.0.0",

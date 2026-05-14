@@ -6,11 +6,13 @@ readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
     "fastapi",
+    "httpx",
     "litellm",
     "litellm[google]",
     "pydantic-settings",
     "python-dotenv",
     "ruff",
+    "streamlit>=1.57.0",
     "structlog",
-    "uvicorn[standard]"
+    "uvicorn[standard]",
 ]

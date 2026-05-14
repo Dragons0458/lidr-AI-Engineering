@@ -1,3 +1,4 @@
+from collections.abc import Iterator
 from typing import Union
 
 import structlog
@@ -84,3 +85,38 @@ def generate_estimation(
     except Exception as e:
         log.error("llm_call_failed", error=str(e), provider=settings.LLM_PROVIDER)
         raise LLMServiceError(f"LLM call failed: {e}") from e
+
+
+def generate_estimation_stream(meeting_summary: str) -> Iterator[str]:
+    """Generate an estimation stream for a software project summary."""
+
+    system_prompt = _generate_system_prompt()
+
+    log.info(
+        "generating_estimation_stream",
+        provider=settings.LLM_PROVIDER,
+        model=settings.LLM_MODEL,
+    )
+
+    try:
+        stream = completion(
+            model=settings.LLM_MODEL,
+            messages=[
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": meeting_summary},
+            ],
+            max_tokens=MAX_TOKENS,
+            reasoning_effort="none",
+            stream=True,
+        )
+
+        for chunk in stream:
+            if not chunk.choices:
+                continue
+
+            delta = chunk.choices[0].delta.content
+            if delta:
+                yield delta
+    except Exception as e:
+        log.error("llm_stream_call_failed", error=str(e), provider=settings.LLM_PROVIDER)
+        raise LLMServiceError(f"LLM stream call failed: {e}") from e

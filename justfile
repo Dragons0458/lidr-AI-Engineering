@@ -9,3 +9,6 @@ lint:
 
 test:
     uv run pytest
+
+streamlit:
+    uv run streamlit run streamlit_app.py
