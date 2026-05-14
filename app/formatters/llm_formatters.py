@@ -13,6 +13,7 @@ settings = get_settings()
 
 def format_response(
     response: Union[ModelResponse, CustomStreamWrapper],
+    prompt_version: str = "v1",
 ) -> EstimationResponse:
     """Format the LLM response into an EstimationResponse object."""
 
@@ -25,6 +26,7 @@ def format_response(
         timestamp=datetime.now(),
         model=settings.LLM_MODEL,
         provider=settings.LLM_PROVIDER,
+        prompt_version=prompt_version,
         usage=TokenUsage(
             cost_estimate=cost.get("total"), tokens_used=input_tokens + output_tokens
         ),
