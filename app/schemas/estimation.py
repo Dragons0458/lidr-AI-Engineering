@@ -4,6 +4,8 @@ from typing import Optional
 
 from pydantic import BaseModel, Field
 
+from app.schemas.attachments import AttachmentText
+
 
 class ProjectType(str, Enum):
     MOBILE_APP = "mobile_app"
@@ -33,13 +35,17 @@ class ReferenceProject(BaseModel):
 
 
 class EstimationRequest(BaseModel):
-    transcript: str = Field(
-        ..., description="Transcript of the meeting summary", min_length=10, max_length=2000
+    description: str = Field(
+        ...,
+        description="Project description, meeting summary, or latest session input",
+        min_length=10,
+        max_length=12000,
     )
     project_type: ProjectType
     detail_level: DetailLevel
     output_format: OutputFormat
     reference_projects: list[ReferenceProject] | None = None
+    attachments: list[AttachmentText] | None = None
 
 
 class TokenUsage(BaseModel):
@@ -54,3 +60,4 @@ class EstimationResponse(BaseModel):
     timestamp: datetime
     usage: TokenUsage
     prompt_version: str
+    project_metadata: dict[str, object] | None = None

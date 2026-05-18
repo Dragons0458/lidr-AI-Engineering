@@ -7,12 +7,18 @@ requires-python = ">=3.11"
 dependencies = [
     "fastapi",
     "httpx",
+    "instructor>=1.15.1",
     "jinja2>=3.1.6",
     "litellm",
     "litellm[google]",
+    "pydantic>=2.13.4",
     "pydantic-settings",
+    "pypdf>=6.11.0",
+    "python-docx>=1.2.0",
     "python-dotenv",
+    "python-multipart",
     "ruff",
+    "starlette>=1.0.0",
     "streamlit>=1.57.0",
     "structlog",
     "uvicorn[standard]",
@@ -21,5 +27,12 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "deepeval>=4.0.2",
     "pytest>=9.0.3",
+]
+
+[tool.pytest.ini_options]
+markers = [
+    "eval: LLM evaluation tests that may require external model access",
+    "slow: slower tests that are not intended for the tight feedback loop",
 ]

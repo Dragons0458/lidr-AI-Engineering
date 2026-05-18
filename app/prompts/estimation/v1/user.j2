@@ -1,5 +1,13 @@
 Generate the estimation for this request.
 
 <input_data>
-<project_description><![CDATA[{{ transcript }}]]></project_description>
+<project_description><![CDATA[{{ description }}]]></project_description>
+{% if attachments %}
+<attachments>
+{% for attachment in attachments %}
+<attachment filename="{{ attachment.filename }}"><![CDATA[--- attachment: {{ attachment.filename }} ---
+{{ attachment.content }}]]></attachment>
+{% endfor %}
+</attachments>
+{% endif %}
 </input_data>

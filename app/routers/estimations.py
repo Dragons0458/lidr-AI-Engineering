@@ -4,11 +4,14 @@ import structlog
 from fastapi import APIRouter, HTTPException, Query
 from starlette.responses import StreamingResponse
 
+from app.config import get_settings
 from app.errors.llm_error import LLMServiceError
 from app.formatters.llm_formatters import format_response
-from app.config import get_settings
 from app.schemas.estimation import EstimationRequest, EstimationResponse
-from app.services.estimation_service import generate_estimation, generate_estimation_stream
+from app.services.estimation_service import (
+    generate_estimation,
+    generate_estimation_stream,
+)
 
 log = structlog.get_logger()
 settings = get_settings()

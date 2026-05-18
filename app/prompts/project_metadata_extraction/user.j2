@@ -1,0 +1,21 @@
+Extract the updated project metadata from this interaction.
+
+<previous_project_metadata>
+{{ previous_metadata_json }}
+</previous_project_metadata>
+
+<latest_project_description><![CDATA[
+{{ description }}
+]]></latest_project_description>
+
+<latest_attachments>
+{% for attachment in attachments %}
+<attachment filename="{{ attachment.filename }}"><![CDATA[
+{{ attachment.content }}
+]]></attachment>
+{% endfor %}
+</latest_attachments>
+
+<latest_llm_response><![CDATA[
+{{ llm_response }}
+]]></latest_llm_response>

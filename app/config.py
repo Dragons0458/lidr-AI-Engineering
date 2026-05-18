@@ -1,6 +1,7 @@
 from functools import lru_cache
 from typing import Literal
 
+from pydantic import Field
 from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -15,6 +16,7 @@ class Settings(BaseSettings):
     GOOGLE_API_KEY: str | None = None
     LLM_PROVIDER: Literal["openai", "anthropic", "google"] = "openai"
     LLM_MODEL: str = "gpt-4o-mini"
+    CONVERSATION_MAX_TURNS: int = Field(default=6, ge=0)
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"
 

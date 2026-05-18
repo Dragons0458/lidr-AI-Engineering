@@ -1,0 +1,139 @@
+import json
+from json import JSONDecodeError
+from typing import Annotated, Literal
+from uuid import uuid4
+
+import structlog
+from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
+from pydantic import TypeAdapter, ValidationError
+
+from app.errors.llm_error import LLMServiceError
+from app.formatters.llm_formatters import format_response
+from app.schemas.estimation import (
+    DetailLevel,
+    EstimationRequest,
+    EstimationResponse,
+    OutputFormat,
+    ProjectType,
+    ReferenceProject,
+)
+from app.schemas.sessions import SessionCreateRequest, SessionResponse
+from app.services.attachment_service import (
+    AttachmentTextExtractionError,
+    UnsupportedAttachmentTypeError,
+    extract_attachment_texts,
+)
+from app.services.estimation_service import generate_estimation
+from app.services.project_metadata_extractor import extract_project_metadata
+from app.services.sessions import Session
+
+
+log = structlog.get_logger()
+router = APIRouter(tags=["sessions"])
+
+
+@router.post("/sessions", response_model=SessionResponse)
+async def create_session(
+    request: SessionCreateRequest | None = None,
+) -> SessionResponse:
+    """Create an in-memory IA session and return its identifier."""
+    session_id = str(uuid4())
+    Session.get_or_create(session_id)
+    return SessionResponse(session_id=session_id)
+
+
+@router.post("/sessions/{session_id}/estimate", response_model=EstimationResponse)
+async def estimate_session(
+    session_id: str,
+    description: Annotated[str, Form()] = "",
+    project_type: Annotated[ProjectType, Form()] = ProjectType.WEB_SAAS,
+    detail_level: Annotated[DetailLevel, Form()] = DetailLevel.MEDIUM,
+    output_format: Annotated[OutputFormat, Form()] = OutputFormat.LINE_ITEMS,
+    reference_projects: Annotated[str | None, Form()] = None,
+    attachments: Annotated[list[UploadFile] | None, File()] = None,
+    prompt_version: Literal["v1", "v2"] = Query(default="v1"),
+) -> EstimationResponse:
+    """Generate an estimation from a session description and optional text attachments."""
+    session = Session.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    try:
+        extracted_attachments = await extract_attachment_texts(attachments)
+        normalized_description = _normalize_description(
+            description, has_attachments=bool(extracted_attachments)
+        )
+        request = EstimationRequest(
+            description=normalized_description,
+            project_type=project_type,
+            detail_level=detail_level,
+            output_format=output_format,
+            reference_projects=_parse_reference_projects(reference_projects),
+            attachments=extracted_attachments or None,
+        )
+        messages = session.history.to_messages_list(
+            request,
+            prompt_version=prompt_version,
+            project_metadata=session.metadata,
+        )
+        response = format_response(
+            generate_estimation(
+                request,
+                prompt_version=prompt_version,
+                project_metadata=session.metadata,
+                messages=messages,
+            ),
+            prompt_version=prompt_version,
+        )
+        session.metadata = extract_project_metadata(
+            previous_metadata=session.metadata,
+            request=request,
+            llm_response=response.estimation,
+        )
+        response.project_metadata = session.metadata.model_dump()
+    except AttachmentTextExtractionError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except UnsupportedAttachmentTypeError as e:
+        raise HTTPException(status_code=415, detail=str(e)) from e
+    except LLMServiceError as e:
+        log.error(
+            "session_estimation_endpoint_error", session_id=session_id, error=str(e)
+        )
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+    session.history.add_message("user", request.description)
+    session.history.add_message("assistant", response.estimation)
+    return response
+
+
+def _normalize_description(description: str, *, has_attachments: bool) -> str:
+    normalized_description = description.strip()
+    if normalized_description:
+        return normalized_description
+
+    if has_attachments:
+        return "Estimar el proyecto con base en los adjuntos proporcionados."
+
+    raise HTTPException(
+        status_code=400,
+        detail="description is required when no attachments are provided.",
+    )
+
+
+def _parse_reference_projects(
+    reference_projects: str | None,
+) -> list[ReferenceProject] | None:
+    if not reference_projects:
+        return None
+
+    try:
+        projects = TypeAdapter(list[ReferenceProject]).validate_python(
+            json.loads(reference_projects)
+        )
+    except (JSONDecodeError, ValidationError) as e:
+        raise HTTPException(
+            status_code=400,
+            detail="reference_projects must be a valid JSON array of reference projects.",
+        ) from e
+
+    return projects or None

@@ -7,6 +7,13 @@ Provide realistic effort estimations for software projects based on meeting note
 - Do not include your internal reasoning.
 - Do not include text outside the requested estimation format.
 - Keep the final output under 500 words.
+- Treat the project description and attachments as one combined source of truth.
+- If the project description is generic but attachments contain concrete requirements, generate the estimation from the attachments.
+- Do not answer only that the request is too vague or ambiguous.
+- If the available input is weak, generate a preliminary discovery/MVP estimate using the selected project type as the baseline.
+- For weak input, explicitly label the result as preliminary and include assumptions, missing information, and a recommended discovery phase.
+- When <project_metadata> contains known facts from previous turns, preserve that continuity in the estimate.
+- If <project_metadata> includes a <project_name>, mention that project name explicitly at least once in the final output.
 </instructions>
 
 <context>
@@ -14,6 +21,10 @@ Provide realistic effort estimations for software projects based on meeting note
 <selected_output_format>{{ output_format }}</selected_output_format>
 <selected_detail_level>{{ detail_level }}</selected_detail_level>
 </context>
+
+<project_metadata>
+{{ project_metadata }}
+</project_metadata>
 
 {% if request.reference_projects %}
 <reference_projects>
