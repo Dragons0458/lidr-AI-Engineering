@@ -11,9 +11,11 @@ from app.errors.llm_error import LLMServiceError
 from app.formatters.llm_formatters import format_response
 from app.schemas.estimation import (
     DetailLevel,
+    ExampleFormat,
     EstimationRequest,
     EstimationResponse,
     OutputFormat,
+    PreprocessingMode,
     ProjectType,
     ReferenceProject,
 )
@@ -24,6 +26,7 @@ from app.services.attachment_service import (
     extract_attachment_texts,
 )
 from app.services.estimation_service import generate_estimation
+from app.services.evaluation import evaluate_estimation_structure
 from app.services.project_metadata_extractor import extract_project_metadata
 from app.services.sessions import Session
 
@@ -50,6 +53,13 @@ async def estimate_session(
     detail_level: Annotated[DetailLevel, Form()] = DetailLevel.MEDIUM,
     output_format: Annotated[OutputFormat, Form()] = OutputFormat.LINE_ITEMS,
     reference_projects: Annotated[str | None, Form()] = None,
+    preprocessing: Annotated[PreprocessingMode, Form()] = "none",
+    use_examples: Annotated[bool, Form()] = True,
+    num_examples: Annotated[int, Form(ge=0, le=5)] = 3,
+    example_format: Annotated[ExampleFormat, Form()] = "markdown",
+    model: Annotated[str | None, Form()] = None,
+    max_tokens: Annotated[int, Form(ge=256, le=16000)] = 4000,
+    evaluate: Annotated[bool, Form()] = True,
     attachments: Annotated[list[UploadFile] | None, File()] = None,
     prompt_version: Literal["v1", "v2"] = Query(default="v1"),
 ) -> EstimationResponse:
@@ -70,6 +80,13 @@ async def estimate_session(
             output_format=output_format,
             reference_projects=_parse_reference_projects(reference_projects),
             attachments=extracted_attachments or None,
+            preprocessing=preprocessing,
+            use_examples=use_examples,
+            num_examples=num_examples,
+            example_format=example_format,
+            model=model,
+            max_tokens=max_tokens,
+            evaluate=evaluate,
         )
         messages = session.history.to_messages_list(
             request,
@@ -85,6 +102,12 @@ async def estimate_session(
             ),
             prompt_version=prompt_version,
         )
+        if request.evaluate:
+            response.validation = evaluate_estimation_structure(
+                response.estimation,
+                response.finish_reason,
+                request.output_format,
+            )
         session.metadata = extract_project_metadata(
             previous_metadata=session.metadata,
             request=request,
