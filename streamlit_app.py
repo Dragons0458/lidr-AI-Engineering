@@ -1,5 +1,6 @@
 import json
 import os
+from streamlit.runtime.uploaded_file_manager import UploadedFile
 import time
 
 import httpx
@@ -210,6 +211,7 @@ with st.expander(form_title, expanded=not conversation_started):
                 ),
                 height=200,
                 key=f"transcription_{st.session_state.form_version}",
+                value="Una app para hacer tortas de queso"
             )
             uploaded_files = st.file_uploader(
                 "Archivos",
@@ -224,17 +226,17 @@ with st.expander(form_title, expanded=not conversation_started):
         )
         project_type = st.selectbox(
             "Tipo de proyecto",
-            options=list(ProjectType),
+            options=list[ProjectType](ProjectType),
             format_func=lambda value: value.value,
         )
         detail_level = st.selectbox(
             "Nivel de detalle",
-            options=list(DetailLevel),
+            options=list[DetailLevel](DetailLevel),
             format_func=lambda value: value.value,
         )
         output_format = st.selectbox(
             "Formato de salida",
-            options=list(OutputFormat),
+            options=list[OutputFormat](OutputFormat),
             format_func=lambda value: value.value,
         )
         reference_projects_rows = st.session_state.reference_projects_rows
@@ -310,7 +312,7 @@ if submitted:
         if conversation_started:
             st.rerun()
 
-        submitted_files = list(uploaded_files)
+        submitted_files = list[UploadedFile](uploaded_files)
         if not transcription.strip() and not submitted_files:
             st.session_state.last_error = (
                 "Agrega una descripción o adjunta al menos un PDF/DOCX con el alcance."

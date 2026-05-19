@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     CONVERSATION_MAX_TURNS: int = Field(default=6, ge=0)
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"
+    CORS_ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
 
     @model_validator(mode="after")
     def validate_api_key_for_provider(self) -> "Settings":
