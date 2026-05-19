@@ -36,7 +36,9 @@ def extract_total_hours(estimation: str) -> int:
         for match in re.findall(r"\b(\d{1,5})\s*(?:h|horas|hours)\b", normalized)
     ]
     if not hour_mentions:
-        raise AssertionError(f"Could not extract total hours from output:\n{estimation}")
+        raise AssertionError(
+            f"Could not extract total hours from output:\n{estimation}"
+        )
     return max(hour_mentions)
 
 

@@ -12,3 +12,6 @@ test:
 
 streamlit:
     uv run streamlit run streamlit_app.py
+
+enable-pre-commit:
+    uv run pre-commit install

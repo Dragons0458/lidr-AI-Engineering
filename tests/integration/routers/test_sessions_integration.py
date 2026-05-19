@@ -98,8 +98,9 @@ async def test_session_links_requests_and_updates_project_metadata(
     assert captured_calls[0]["project_metadata"] == ProjectMetadata()
     assert captured_calls[1]["project_metadata"].project_name == "CRM interno"
     assert captured_calls[1]["project_metadata"].mentioned_technologies == ["FastAPI"]
-    assert "<project_name>CRM interno</project_name>" in (
-        captured_calls[1]["messages"][0]["content"]
+    assert (
+        "<project_name>CRM interno</project_name>"
+        in (captured_calls[1]["messages"][0]["content"])
     )
     assert Session.get(session_id).metadata.assumed_team_size == 4
 
@@ -135,12 +136,12 @@ async def test_pdf_attachment_content_changes_estimation_output(monkeypatch) -> 
     )
 
     async with _async_client() as client:
-        baseline_session_id = (
-            await client.post(f"{API_PREFIX}/sessions")
-        ).json()["session_id"]
-        pdf_session_id = (
-            await client.post(f"{API_PREFIX}/sessions")
-        ).json()["session_id"]
+        baseline_session_id = (await client.post(f"{API_PREFIX}/sessions")).json()[
+            "session_id"
+        ]
+        pdf_session_id = (await client.post(f"{API_PREFIX}/sessions")).json()[
+            "session_id"
+        ]
 
         baseline_response = await client.post(
             f"{API_PREFIX}/sessions/{baseline_session_id}/estimate",

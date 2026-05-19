@@ -163,9 +163,9 @@ def test_session_estimate_accepts_attachments_without_description(monkeypatch) -
     )
 
 
-def test_session_estimate_rejects_empty_description_without_attachments(monkeypatch) -> (
-    None
-):
+def test_session_estimate_rejects_empty_description_without_attachments(
+    monkeypatch,
+) -> None:
     Session.clear_all()
     session = Session.get_or_create("session-123")
     client = TestClient(app)

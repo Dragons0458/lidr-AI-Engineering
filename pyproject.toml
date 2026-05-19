@@ -28,6 +28,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "deepeval>=4.0.2",
+    "pre-commit>=4.6.0",
     "pytest>=9.0.3",
 ]
 

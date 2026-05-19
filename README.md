@@ -278,3 +278,26 @@ API de cada proveedor.
 - `v1`: instrucciones clásicas de estimación con salidas de planificación concisas.
 - `v2`: estilo de planificación consciente de riesgos; incluye guía de horas de colchón y mayor énfasis en
   riesgos/dependencias.
+
+## Flujo de commit con linters
+
+Para ejecutar validaciones de calidad automáticamente en cada commit:
+
+```bash
+uv run pre-commit install
+```
+
+Hooks configurados:
+
+- `ruff-check --fix` para linting y autofixes rápidos.
+- `ruff-format` para formato consistente.
+- `pre-commit-hooks` básicos (`check-yaml`, `end-of-file-fixer`, `trailing-whitespace`).
+- `pytest` rápido sobre `tests/unit` y `tests/integration/routers` para evitar regresiones básicas antes del commit.
+
+Ejecutar todos los hooks manualmente:
+
+```bash
+uv run pre-commit run --all-files
+```
+
+Para evitar costo/latencia, las evaluaciones reales del LLM (`tests/integration/evals`) no corren en el hook de commit.

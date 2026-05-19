@@ -276,7 +276,9 @@ with st.expander(form_title, expanded=not conversation_started):
                 },
             )
         submit_label = (
-            "Generar estimación" if not conversation_started else "Guardar configuración"
+            "Generar estimación"
+            if not conversation_started
+            else "Guardar configuración"
         )
         submitted = st.form_submit_button(
             submit_label, disabled=not st.session_state.session_id
@@ -353,9 +355,7 @@ if submitted:
         response.raise_for_status()
 
         estimation_response = EstimationResponse.model_validate(response.json())
-        is_ambiguous_response = is_ambiguous_estimation(
-            estimation_response.estimation
-        )
+        is_ambiguous_response = is_ambiguous_estimation(estimation_response.estimation)
         st.session_state.last_estimation = estimation_response.estimation
         st.session_state.model = estimation_response.model
         st.session_state.prompt_version = estimation_response.prompt_version
@@ -390,16 +390,16 @@ if st.session_state.last_error and not st.session_state.messages:
 for message in st.session_state.messages:
     add_message(message["role"], message["content"])
 
-chat_disabled = not st.session_state.session_id or not st.session_state.attachments_locked
+chat_disabled = (
+    not st.session_state.session_id or not st.session_state.attachments_locked
+)
 chat_placeholder = (
     "Primero genera una estimación desde el formulario superior"
     if not st.session_state.attachments_locked
     else "Escribe un nuevo mensaje"
 )
 
-if prompt := st.chat_input(
-    chat_placeholder, disabled=chat_disabled
-):
+if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
     start_time = time.perf_counter()
     st.session_state.last_error = ""
     st.session_state.messages.append({"role": "user", "content": prompt})
