@@ -1,0 +1,24 @@
+Extract the project requirements from this input.
+
+<input_data>
+<project_description><![CDATA[{{ description }}]]></project_description>
+{% if attachments %}
+<attachments>
+{% for attachment in attachments %}
+<attachment filename="{{ attachment.filename }}"><![CDATA[--- attachment: {{ attachment.filename }} ---
+{{ attachment.content }}]]></attachment>
+{% endfor %}
+</attachments>
+{% endif %}
+</input_data>
+
+<output_format>
+## Requisitos funcionales
+- ...
+
+## Requisitos no funcionales
+- ...
+
+## Supuestos y dudas abiertas
+- ...
+</output_format>
