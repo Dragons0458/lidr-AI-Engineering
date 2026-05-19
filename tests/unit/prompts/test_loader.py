@@ -191,6 +191,24 @@ def test_project_metadata_extraction_prompt_renders_from_templates() -> None:
     assert "<latest_llm_response><![CDATA[" in user_prompt
 
 
+def test_project_metadata_extraction_prompt_omits_empty_metadata_fields() -> None:
+    request = _build_request(description="Nueva iteracion del proyecto.")
+    previous_metadata = ProjectMetadata(project_name="Portal Clientes")
+
+    _, user_prompt = render_project_metadata_extraction_prompt(
+        previous_metadata=previous_metadata,
+        request=request,
+        llm_response="Mantener alcance actual.",
+    )
+
+    assert "<previous_project_metadata>" in user_prompt
+    assert '"project_name":"Portal Clientes"' in user_prompt
+    assert '"assumed_team_size"' not in user_prompt
+    assert '"mentioned_technologies"' not in user_prompt
+    assert '"excluded_technologies"' not in user_prompt
+    assert '"agreed_scope"' not in user_prompt
+
+
 def test_user_prompt_renders_attachments_with_clear_separator() -> None:
     request = _build_request().model_copy(
         update={

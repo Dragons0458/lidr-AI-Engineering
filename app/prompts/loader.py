@@ -5,12 +5,15 @@ from jinja2 import Environment, FileSystemLoader, StrictUndefined
 from markupsafe import escape
 import structlog
 
+from app.context.examples import build_prompt_examples
+from app.schemas.estimation import ExampleFormat
 from app.schemas.estimation import EstimationRequest
 from app.services.sessions import ProjectMetadata
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
 _ESTIMATION_PROMPTS_ROOT = "estimation"
 _PROJECT_METADATA_EXTRACTION_PROMPTS_ROOT = "project_metadata_extraction"
+_REQUIREMENTS_EXTRACTION_PROMPTS_ROOT = "requirements_extraction"
 log = structlog.get_logger()
 
 _jinja_env = Environment(
@@ -25,9 +28,21 @@ def render_estimation_prompt(
     request: EstimationRequest,
     version: str = "v1",
     project_metadata: ProjectMetadata | None = None,
+    use_examples: bool | None = None,
+    num_examples: int | None = None,
+    example_format: ExampleFormat | None = None,
 ) -> tuple[str, str]:
     """Render system and user prompts for estimation requests."""
     template_base_path = f"{_ESTIMATION_PROMPTS_ROOT}/{version}"
+    selected_use_examples = (
+        request.use_examples if use_examples is None else use_examples
+    )
+    selected_num_examples = (
+        request.num_examples if num_examples is None else num_examples
+    )
+    selected_example_format = (
+        request.example_format if example_format is None else example_format
+    )
     template_context = {
         "request": request,
         "project_type": request.project_type.value,
@@ -36,6 +51,11 @@ def render_estimation_prompt(
         "description": request.description,
         "attachments": request.attachments or [],
         "project_metadata": format_project_metadata_for_prompt(project_metadata),
+        "examples": build_prompt_examples(
+            use_examples=selected_use_examples,
+            num_examples=selected_num_examples,
+            example_format=selected_example_format,
+        ),
     }
 
     system_prompt = _jinja_env.get_template(f"{template_base_path}/system.j2").render(
@@ -57,6 +77,25 @@ def render_estimation_prompt(
     return system_prompt, user_prompt
 
 
+def render_requirements_extraction_prompt(
+    request: EstimationRequest,
+) -> tuple[str, str]:
+    """Render system and user prompts for two-phase requirements extraction."""
+    template_context = {
+        "description": request.description,
+        "attachments": request.attachments or [],
+        "project_type": request.project_type.value,
+    }
+    system_prompt = _jinja_env.get_template(
+        f"{_REQUIREMENTS_EXTRACTION_PROMPTS_ROOT}/system.j2"
+    ).render(**template_context)
+    user_prompt = _jinja_env.get_template(
+        f"{_REQUIREMENTS_EXTRACTION_PROMPTS_ROOT}/user.j2"
+    ).render(**template_context)
+
+    return system_prompt, user_prompt
+
+
 def render_project_metadata_extraction_prompt(
     previous_metadata: ProjectMetadata,
     request: EstimationRequest,
@@ -64,7 +103,10 @@ def render_project_metadata_extraction_prompt(
 ) -> tuple[str, str]:
     """Render system and user prompts for project metadata extraction."""
     template_context = {
-        "previous_metadata_json": previous_metadata.model_dump_json(),
+        "previous_metadata_json": previous_metadata.model_dump_json(
+            exclude_none=True,
+            exclude_defaults=True,
+        ),
         "description": request.description,
         "attachments": request.attachments or [],
         "llm_response": llm_response,

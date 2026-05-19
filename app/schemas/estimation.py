@@ -1,10 +1,13 @@
 from datetime import datetime
 from enum import Enum
-from typing import Optional
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field
 
 from app.schemas.attachments import AttachmentText
+
+PreprocessingMode = Literal["none", "two_phase"]
+ExampleFormat = Literal["markdown", "json", "narrative"]
 
 
 class ProjectType(str, Enum):
@@ -46,11 +49,34 @@ class EstimationRequest(BaseModel):
     output_format: OutputFormat
     reference_projects: list[ReferenceProject] | None = None
     attachments: list[AttachmentText] | None = None
+    preprocessing: PreprocessingMode = "none"
+    use_examples: bool = True
+    num_examples: int = Field(default=3, ge=0, le=5)
+    example_format: ExampleFormat = "markdown"
+    model: str | None = None
+    max_tokens: int = Field(default=4000, ge=256, le=16000)
+    evaluate: bool = True
 
 
 class TokenUsage(BaseModel):
     tokens_used: Optional[int] = None
+    input_tokens: Optional[int] = None
+    output_tokens: Optional[int] = None
     cost_estimate: Optional[float] = None
+
+
+class StructureCheck(BaseModel):
+    has_title: bool
+    has_breakdown_table: bool
+    has_totals_section: bool
+    has_team_section: bool
+    has_duration_section: bool
+    declared_total_hours: int | None = None
+    sum_row_hours: int | None = None
+    hours_match: bool | None = None
+    finish_reason_ok: bool
+    score: float
+    issues: list[str] = Field(default_factory=list)
 
 
 class EstimationResponse(BaseModel):
@@ -61,3 +87,8 @@ class EstimationResponse(BaseModel):
     usage: TokenUsage
     prompt_version: str
     project_metadata: dict[str, object] | None = None
+    latency_ms: int = 0
+    finish_reason: str | None = None
+    preprocessing: PreprocessingMode = "none"
+    extracted_requirements: str | None = None
+    validation: StructureCheck | None = None
