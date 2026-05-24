@@ -257,6 +257,165 @@ el texto extraído de los adjuntos se puede almacenar, inspeccionar, probar y re
 en comportamientos futuros de sesión sin depender de la semántica específica de Files
 API de cada proveedor.
 
+## Stress test CAG
+
+El stress test mide donde empieza a degradarse el CAG cuando crecen el historial
+conversacional y los adjuntos. El flujo genera:
+
+- `evals/stress/results.csv`: una fila por turno ejecutado.
+- `evals/stress/REPORT.md`: lectura del CSV con tablas de latencia, coste y recall.
+
+El runner usa los escenarios de `evals/stress/scenarios.py`, genera PDFs
+sinteticos deterministas con `evals/stress/fixtures/build_pdfs.py` y evalua tres
+metricas binarias:
+
+- `LatencyBudgetMetric`: pasa si `latency_ms <= 4000` por defecto.
+- `CostBudgetMetric`: pasa si `cost_usd <= 0.05` por defecto.
+- `MemoryDriftMetric`: pasa si los facts esperados aparecen en `summary`,
+  `anchors` o `metadata` del snapshot de sesion.
+
+### 1. Preparar entorno
+
+Instala dependencias:
+
+```bash
+uv sync --group dev
+```
+
+Configura el proveedor LLM en `.env`. Ejemplo con Gemini:
+
+```env
+LLM_PROVIDER=google
+LLM_MODEL=gemini/gemini-2.5-flash
+GOOGLE_API_KEY=your_key_here
+```
+
+### 2. Elegir modo de ejecucion
+
+Hay dos formas equivalentes.
+
+Modo in-process, sin levantar servidor:
+
+```bash
+uv run python -m evals.stress.run \
+  --scenarios growing \
+  --attachment-sizes 0 \
+  --repeats 1 \
+  --turn-counts 1 \
+  --output evals/stress/results_smoke.csv
+```
+
+Modo HTTP, contra una API local. En una terminal levanta la API:
+
+```bash
+uv run uvicorn app.main:app --reload
+```
+
+En otra terminal ejecuta el runner:
+
+```bash
+uv run python -m evals.stress.run \
+  --http http://localhost:8000 \
+  --scenarios growing \
+  --attachment-sizes 0 \
+  --repeats 1 \
+  --turn-counts 1 \
+  --output evals/stress/results_smoke.csv
+```
+
+Al terminar el smoke test se espera un CSV con 2 lineas: header + 1 fila de
+datos. Sirve para validar credenciales, conectividad con el LLM y escritura de
+resultados antes de gastar mas tokens.
+
+### 3. Generar una muestra reducida para reporte
+
+Esta es la ejecucion usada para el reporte versionado en este repo:
+
+```bash
+uv run python -m evals.stress.run \
+  --scenarios growing,pivot,contradiction \
+  --attachment-sizes 0,20,100 \
+  --repeats 1 \
+  --turn-counts 1,6,20 \
+  --output evals/stress/results.csv
+```
+
+Resultado esperado:
+
+- `evals/stress/results.csv` existe.
+- `wc -l evals/stress/results.csv` devuelve `244`.
+- Hay 243 filas de datos: `3 escenarios x 3 tamanos x (1 + 6 + 20) turnos`.
+- Las columnas incluyen `tokens_in`, `tokens_out`, `cost_usd`, `latency_ms`,
+  `memory_drift_score`, `latency_budget_passed` y `cost_budget_passed`.
+
+Valida el archivo:
+
+```bash
+wc -l evals/stress/results.csv
+sed -n '1,5p' evals/stress/results.csv
+```
+
+### 4. Ejecutar el stress test completo del ejercicio
+
+Usa este comando si quieres cubrir todos los tamanos y repeticiones pedidos por
+la guia:
+
+```bash
+uv run python -m evals.stress.run \
+  --http http://localhost:8000 \
+  --scenarios growing,pivot,contradiction \
+  --attachment-sizes 0,5,20,50,100 \
+  --repeats 3 \
+  --output evals/stress/results.csv
+```
+
+Resultado esperado:
+
+- `evals/stress/results.csv` existe.
+- `wc -l evals/stress/results.csv` devuelve `1801`.
+- Hay 1800 filas de datos:
+  `3 escenarios x 5 tamanos x 3 repeticiones x (1 + 3 + 6 + 10 + 20) turnos`.
+
+Esta ejecucion hace muchas llamadas al LLM. Para ahorrar coste, usa primero el
+smoke test y luego la muestra reducida.
+
+### 5. Actualizar el reporte Markdown
+
+El runner produce el CSV. El reporte final se guarda en:
+
+```text
+evals/stress/REPORT.md
+```
+
+El reporte debe contener, como minimo:
+
+- Tabla resumen por escenario y tamano de adjunto con P50/P95 de `latency_ms`,
+  coste total, hit rate de cache y recall medio.
+- Curva `latency_ms` vs `tokens_in`.
+- Curva de `cost_usd` acumulado vs `turn_index`.
+- Curva de `MemoryDriftMetric` vs longitud de historial.
+- Dos parrafos de lectura con al menos una afirmacion cuantitativa.
+
+Despues de editar el reporte, verifica los entregables:
+
+```bash
+test -f evals/stress/results.csv
+test -f evals/stress/REPORT.md
+wc -l evals/stress/results.csv evals/stress/REPORT.md
+```
+
+Para validar el codigo relacionado:
+
+```bash
+uv run pytest tests/unit/stress tests/unit/routers/test_sessions.py tests/integration/routers/test_sessions_integration.py
+```
+
+Resultado esperado de la suite relevante:
+
+```text
+30 passed
+```
+
 ## Modelo de respuesta
 
 ```json
