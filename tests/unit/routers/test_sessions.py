@@ -26,6 +26,47 @@ def test_create_session_returns_uuid_and_registers_session() -> None:
     assert Session.get(session_id) is not None
 
 
+def test_get_session_debug_returns_snapshot() -> None:
+    Session.clear_all()
+    session = Session.get_or_create("session-123")
+    session.metadata.project_name = "Nimbus"
+    session.last_turn_observation = {"turn_index": 1, "latency_ms": 123}
+    session.history.add_message("user", "Project description with enough detail.")
+    session.history.add_message("assistant", "Estimated work breakdown")
+    client = TestClient(app)
+
+    response = client.get(f"{API_PREFIX}/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "session_id": "session-123",
+        "message_count": 2,
+        "anchors_count": 0,
+        "summary_chars": 0,
+        "last_resolved_tier": None,
+        "last_tier_rule": None,
+        "summary": "",
+        "anchors": [],
+        "metadata": {
+            "project_name": "Nimbus",
+            "assumed_team_size": None,
+            "mentioned_technologies": [],
+            "excluded_technologies": [],
+            "agreed_scope": None,
+        },
+        "last_turn_observation": {"turn_index": 1, "latency_ms": 123},
+    }
+
+
+def test_get_session_debug_returns_404_for_unknown_session() -> None:
+    Session.clear_all()
+    client = TestClient(app)
+
+    response = client.get(f"{API_PREFIX}/sessions/missing")
+
+    assert response.status_code == 404
+
+
 def test_session_estimate_extracts_attachment_text(monkeypatch) -> None:
     Session.clear_all()
     session = Session.get_or_create("session-123")
@@ -161,6 +202,78 @@ def test_session_estimate_accepts_attachments_without_description(monkeypatch) -
     assert captured["request"].attachments[0].content == (
         "Authentication and reporting requirements."
     )
+
+
+def test_session_estimate_emits_turn_observed(monkeypatch) -> None:
+    Session.clear_all()
+    session = Session.get_or_create("session-123")
+    client = TestClient(app)
+    log_events = []
+
+    def fake_generate_estimation(
+        request, prompt_version="v1", project_metadata=None, messages=None
+    ):
+        return SimpleNamespace()
+
+    def fake_format_response(response, prompt_version="v1"):
+        return EstimationResponse(
+            estimation="Estimated work breakdown",
+            model="test-model",
+            provider="test-provider",
+            timestamp=datetime(2026, 5, 18),
+            usage=TokenUsage(
+                tokens_used=30,
+                input_tokens=20,
+                output_tokens=10,
+                cost_estimate=0.02,
+            ),
+            prompt_version=prompt_version,
+            latency_ms=123,
+        )
+
+    def fake_extract_project_metadata(previous_metadata, request, llm_response):
+        return previous_metadata
+
+    def fake_log_info(event, **kwargs):
+        log_events.append((event, kwargs))
+
+    monkeypatch.setattr(
+        "app.routers.sessions.generate_estimation", fake_generate_estimation
+    )
+    monkeypatch.setattr("app.routers.sessions.format_response", fake_format_response)
+    monkeypatch.setattr(
+        "app.routers.sessions.extract_project_metadata",
+        fake_extract_project_metadata,
+    )
+    monkeypatch.setattr("app.routers.sessions.log.info", fake_log_info)
+
+    response = client.post(
+        f"{API_PREFIX}/sessions/{session.session_id}/estimate",
+        data={"description": "Project description with enough detail."},
+    )
+
+    assert response.status_code == 200
+    assert log_events == [
+        (
+            "turn_observed",
+            {
+                "turn_index": 1,
+                "session_id": "session-123",
+                "enriched_transcript_chars": 39,
+                "attachments_total_chars": 0,
+                "messages_in_window": 2,
+                "anchors_count": 0,
+                "summary_chars": 0,
+                "tokens_in": 20,
+                "tokens_out": 10,
+                "cost_usd": 0.02,
+                "latency_ms": 123,
+                "cache_hit_kind": "none",
+                "last_resolved_tier": None,
+            },
+        )
+    ]
+    assert session.last_turn_observation == log_events[0][1]
 
 
 def test_session_estimate_rejects_empty_description_without_attachments(

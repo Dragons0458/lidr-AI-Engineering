@@ -19,7 +19,11 @@ from app.schemas.estimation import (
     ProjectType,
     ReferenceProject,
 )
-from app.schemas.sessions import SessionCreateRequest, SessionResponse
+from app.schemas.sessions import (
+    SessionCreateRequest,
+    SessionDebugResponse,
+    SessionResponse,
+)
 from app.services.attachment_service import (
     AttachmentTextExtractionError,
     UnsupportedAttachmentTypeError,
@@ -43,6 +47,25 @@ async def create_session(
     session_id = str(uuid4())
     Session.get_or_create(session_id)
     return SessionResponse(session_id=session_id)
+
+
+@router.get("/sessions/{session_id}", response_model=SessionDebugResponse)
+async def get_session_debug(session_id: str) -> SessionDebugResponse:
+    """Return the in-memory session snapshot used by stress-test metrics."""
+    session = Session.get(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    return SessionDebugResponse(
+        session_id=session.session_id,
+        message_count=sum(len(turn.messages) for turn in session.history.turns),
+        anchors_count=0,
+        summary_chars=0,
+        summary="",
+        anchors=[],
+        metadata=session.metadata.model_dump(),
+        last_turn_observation=session.last_turn_observation,
+    )
 
 
 @router.post("/sessions/{session_id}/estimate", response_model=EstimationResponse)
@@ -124,8 +147,16 @@ async def estimate_session(
         )
         raise HTTPException(status_code=500, detail=str(e)) from e
 
+    session.turn_count += 1
     session.history.add_message("user", request.description)
     session.history.add_message("assistant", response.estimation)
+    turn_observation = _build_turn_observation(
+        session=session,
+        request=request,
+        response=response,
+    )
+    session.last_turn_observation = turn_observation
+    log.info("turn_observed", **turn_observation)
     return response
 
 
@@ -160,3 +191,33 @@ def _parse_reference_projects(
         ) from e
 
     return projects or None
+
+
+def _build_turn_observation(
+    *,
+    session: Session,
+    request: EstimationRequest,
+    response: EstimationResponse,
+) -> dict[str, object]:
+    attachments_text = "\n".join(
+        attachment.content for attachment in request.attachments or []
+    )
+    enriched_transcript = "\n".join(
+        part for part in (request.description, attachments_text) if part
+    )
+
+    return {
+        "turn_index": session.turn_count,
+        "session_id": session.session_id,
+        "enriched_transcript_chars": len(enriched_transcript),
+        "attachments_total_chars": len(attachments_text),
+        "messages_in_window": sum(len(turn.messages) for turn in session.history.turns),
+        "anchors_count": 0,
+        "summary_chars": 0,
+        "tokens_in": response.usage.input_tokens or 0,
+        "tokens_out": response.usage.output_tokens or 0,
+        "cost_usd": response.usage.cost_estimate or 0.0,
+        "latency_ms": response.latency_ms,
+        "cache_hit_kind": "none",
+        "last_resolved_tier": None,
+    }

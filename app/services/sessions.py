@@ -124,6 +124,8 @@ class Session:
         default_factory=lambda: ConversationHistory(max_turns=_default_max_turns())
     )
     metadata: ProjectMetadata = field(default_factory=ProjectMetadata)
+    turn_count: int = 0
+    last_turn_observation: dict[str, object] | None = None
 
     _sessions: ClassVar[dict[str, "Session"]] = {}
 
