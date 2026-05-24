@@ -1,0 +1,244 @@
+scenario,scenario_base,scenario_turns,attachment_size_kb,repeat,expected_fact,turn_index,session_id,enriched_transcript_chars,attachments_total_chars,messages_in_window,anchors_count,summary_chars,tokens_in,tokens_out,cost_usd,latency_ms,cache_hit_kind,last_resolved_tier,latency_budget_passed,cost_budget_passed,memory_drift_passed,memory_drift_score
+growing_1,growing,1,0,1,project name: Nimbus,1,3b35585d-6e7c-47c0-8d58-d321f536e7e6,71,0,2,0,0,1085,652,0.00036930000000000003,4171,none,,0,1,1,1.0
+growing_1,growing,1,20,1,project name: Nimbus,1,ae03b7c0-9dc6-4360-a80a-715788ac082c,18848,18776,2,0,0,4462,781,0.0007586,4222,none,,0,1,1,1.0
+growing_1,growing,1,100,1,project name: Nimbus,1,b13e08bc-fe5b-4397-9874-bee6014cc772,94256,94184,2,0,0,17873,947,0.0021661000000000002,6718,none,,0,1,1,1.0
+growing_6,growing,6,0,1,project name: Nimbus,1,fcb6de5f-6281-4b25-a574-07184b613002,71,0,2,0,0,1085,758,0.0004117,4119,none,,0,1,1,1.0
+growing_6,growing,6,0,1,scope includes authentication,2,fcb6de5f-6281-4b25-a574-07184b613002,111,0,4,0,0,1920,386,0.0003464,2338,none,,1,1,0,0.0
+growing_6,growing,6,0,1,scope includes multi-tenant organizations,3,fcb6de5f-6281-4b25-a574-07184b613002,132,0,6,0,0,2377,484,0.0004313,2876,none,,1,1,0,0.0
+growing_6,growing,6,0,1,scope includes audit log,4,fcb6de5f-6281-4b25-a574-07184b613002,107,0,8,0,0,2899,368,0.0004371,2916,none,,1,1,0,0.0
+growing_6,growing,6,0,1,scope includes CSV export,5,fcb6de5f-6281-4b25-a574-07184b613002,107,0,10,0,0,3293,371,0.00047770000000000006,2279,none,,1,1,0,0.25
+growing_6,growing,6,0,1,scope includes Slack notifications,6,fcb6de5f-6281-4b25-a574-07184b613002,118,0,12,0,0,3705,412,0.0005353000000000001,3269,none,,1,1,0,0.4
+growing_6,growing,6,20,1,project name: Nimbus,1,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18848,18776,2,0,0,4462,694,0.0007237999999999999,4043,none,,0,1,1,1.0
+growing_6,growing,6,20,1,scope includes authentication,2,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18888,18776,4,0,0,5231,338,0.0006583000000000001,2265,none,,1,1,0,0.0
+growing_6,growing,6,20,1,scope includes multi-tenant organizations,3,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18909,18776,6,0,0,5605,394,0.0007181,2494,none,,1,1,0,0.0
+growing_6,growing,6,20,1,scope includes audit log,4,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18884,18776,8,0,0,6036,353,0.0007448000000000001,2415,none,,1,1,0,0.0
+growing_6,growing,6,20,1,scope includes CSV export,5,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18884,18776,10,0,0,6423,399,0.0008019,2459,none,,1,1,0,0.0
+growing_6,growing,6,20,1,scope includes Slack notifications,6,fa5bed36-119a-46e1-9472-e4fcaf8bf023,18895,18776,12,0,0,6876,375,0.0008376,3416,none,,1,1,0,0.0
+growing_6,growing,6,100,1,project name: Nimbus,1,12e95891-d68d-4250-9d00-abb352ca41b7,94256,94184,2,0,0,17873,758,0.0020905000000000003,4585,none,,0,1,1,1.0
+growing_6,growing,6,100,1,scope includes authentication,2,12e95891-d68d-4250-9d00-abb352ca41b7,94296,94184,4,0,0,18707,338,0.0020059,2368,none,,1,1,0,0.0
+growing_6,growing,6,100,1,scope includes multi-tenant organizations,3,12e95891-d68d-4250-9d00-abb352ca41b7,94317,94184,6,0,0,19083,494,0.0021059,3272,none,,1,1,0,0.0
+growing_6,growing,6,100,1,scope includes audit log,4,12e95891-d68d-4250-9d00-abb352ca41b7,94292,94184,8,0,0,19615,537,0.0021763,3545,none,,1,1,0,0.0
+growing_6,growing,6,100,1,scope includes CSV export,5,12e95891-d68d-4250-9d00-abb352ca41b7,94292,94184,10,0,0,20186,474,0.0022082,3259,none,,1,1,0,0.0
+growing_6,growing,6,100,1,scope includes Slack notifications,6,12e95891-d68d-4250-9d00-abb352ca41b7,94303,94184,12,0,0,20714,379,0.002223,2788,none,,1,1,0,0.0
+growing_20,growing,20,0,1,project name: Nimbus,1,e1d433c2-399a-43be-95ec-07e45984d100,71,0,2,0,0,1085,335,0.0002425,2265,none,,1,1,1,1.0
+growing_20,growing,20,0,1,scope includes authentication,2,e1d433c2-399a-43be-95ec-07e45984d100,111,0,4,0,0,1497,186,0.00022410000000000003,1766,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes multi-tenant organizations,3,e1d433c2-399a-43be-95ec-07e45984d100,132,0,6,0,0,1708,222,0.0002596,1745,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes audit log,4,e1d433c2-399a-43be-95ec-07e45984d100,107,0,8,0,0,1967,199,0.00027630000000000005,1619,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes CSV export,5,e1d433c2-399a-43be-95ec-07e45984d100,107,0,10,0,0,2200,236,0.00031440000000000005,1880,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes Slack notifications,6,e1d433c2-399a-43be-95ec-07e45984d100,118,0,12,0,0,2468,198,0.000326,1549,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes funnel dashboard,7,e1d433c2-399a-43be-95ec-07e45984d100,117,0,12,0,0,2720,237,0.0003668,1708,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes localization,8,e1d433c2-399a-43be-95ec-07e45984d100,115,0,12,0,0,2635,229,0.0003551,1734,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes document upload,9,e1d433c2-399a-43be-95ec-07e45984d100,110,0,12,0,0,2693,275,0.00037930000000000006,2158,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes virus scanning,10,e1d433c2-399a-43be-95ec-07e45984d100,111,0,12,0,0,2763,246,0.0003747,1753,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes CRM webhooks,11,e1d433c2-399a-43be-95ec-07e45984d100,117,0,12,0,0,2820,243,0.0003792,1897,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes internal comments,12,e1d433c2-399a-43be-95ec-07e45984d100,112,0,12,0,0,2838,251,0.0003842,1940,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes saved filters,13,e1d433c2-399a-43be-95ec-07e45984d100,104,0,12,0,0,2901,288,0.00040530000000000004,2005,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes weekly digest emails,14,e1d433c2-399a-43be-95ec-07e45984d100,118,0,12,0,0,2962,292,0.000413,1966,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes SAML SSO,15,e1d433c2-399a-43be-95ec-07e45984d100,81,0,12,0,0,3036,291,0.00042,2301,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes SCIM provisioning,16,e1d433c2-399a-43be-95ec-07e45984d100,110,0,12,0,0,3068,282,0.00041960000000000006,1694,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes data retention controls,17,e1d433c2-399a-43be-95ec-07e45984d100,116,0,12,0,0,3148,302,0.00043560000000000007,2185,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes billing usage,18,e1d433c2-399a-43be-95ec-07e45984d100,104,0,12,0,0,3216,308,0.0004448,1863,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes public API keys,19,e1d433c2-399a-43be-95ec-07e45984d100,106,0,12,0,0,3286,345,0.0004666,2314,none,,1,1,0,0.0
+growing_20,growing,20,0,1,scope includes production observability,20,e1d433c2-399a-43be-95ec-07e45984d100,118,0,12,0,0,3355,323,0.0004647,2049,none,,1,1,0,0.0
+growing_20,growing,20,20,1,project name: Nimbus,1,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18848,18776,2,0,0,4462,907,0.000809,5172,none,,0,1,1,1.0
+growing_20,growing,20,20,1,scope includes authentication,2,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18888,18776,4,0,0,5444,551,0.0007647999999999999,3332,none,,1,1,0,0.0
+growing_20,growing,20,20,1,scope includes multi-tenant organizations,3,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18909,18776,6,0,0,6075,573,0.0008367,3301,none,,1,1,0,0.5
+growing_20,growing,20,20,1,scope includes audit log,4,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18884,18776,8,0,0,6684,558,0.0008916,3087,none,,1,1,0,0.333
+growing_20,growing,20,20,1,scope includes CSV export,5,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18884,18776,10,0,0,7277,537,0.0009425,3164,none,,1,1,0,0.25
+growing_20,growing,20,20,1,scope includes Slack notifications,6,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18895,18776,12,0,0,7854,497,0.0009842,3237,none,,1,1,0,0.2
+growing_20,growing,20,20,1,scope includes funnel dashboard,7,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18894,18776,12,0,0,8391,607,0.0010819,3322,none,,1,1,0,0.167
+growing_20,growing,20,20,1,scope includes localization,8,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18892,18776,12,0,0,8104,652,0.0010712,3879,none,,1,1,0,0.143
+growing_20,growing,20,20,1,scope includes document upload,9,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18887,18776,12,0,0,8246,614,0.0010701999999999999,3784,none,,1,1,0,0.125
+growing_20,growing,20,20,1,scope includes virus scanning,10,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18888,18776,12,0,0,8320,689,0.0011076,3788,none,,1,1,0,0.222
+growing_20,growing,20,20,1,scope includes CRM webhooks,11,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18894,18776,12,0,0,8468,683,0.00112,3771,none,,1,1,0,0.2
+growing_20,growing,20,20,1,scope includes internal comments,12,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18889,18776,12,0,0,8661,663,0.0011313,4607,none,,0,1,0,0.273
+growing_20,growing,20,20,1,scope includes saved filters,13,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18881,18776,12,0,0,8831,684,0.0011567,3710,none,,1,1,0,0.333
+growing_20,growing,20,20,1,scope includes weekly digest emails,14,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18895,18776,12,0,0,8919,734,0.0011855,4316,none,,0,1,0,0.385
+growing_20,growing,20,20,1,scope includes SAML SSO,15,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18858,18776,12,0,0,9007,745,0.0011987,4268,none,,0,1,0,0.429
+growing_20,growing,20,20,1,scope includes SCIM provisioning,16,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18887,18776,12,0,0,9168,1028,0.0013280000000000002,5772,none,,0,1,0,0.467
+growing_20,growing,20,20,1,scope includes data retention controls,17,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18893,18776,12,0,0,9534,720,0.0012414000000000001,4223,none,,0,1,0,0.5
+growing_20,growing,20,20,1,scope includes billing usage,18,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18881,18776,12,0,0,9581,743,0.0012553,4254,none,,0,1,0,0.529
+growing_20,growing,20,20,1,scope includes public API keys,19,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18883,18776,12,0,0,9679,881,0.0013203,5125,none,,0,1,0,0.556
+growing_20,growing,20,20,1,scope includes production observability,20,9532bc33-c259-4a0d-8eda-0ccbec3f1c47,18895,18776,12,0,0,9898,743,0.0012870000000000002,4423,none,,0,1,0,0.579
+growing_20,growing,20,100,1,project name: Nimbus,1,bced0993-a2af-4448-a4de-4bfa94c24325,94256,94184,2,0,0,17873,786,0.0021017,5204,none,,0,1,1,1.0
+growing_20,growing,20,100,1,scope includes authentication,2,bced0993-a2af-4448-a4de-4bfa94c24325,94296,94184,4,0,0,18734,338,0.0020086,2810,none,,1,1,0,0.0
+growing_20,growing,20,100,1,scope includes multi-tenant organizations,3,bced0993-a2af-4448-a4de-4bfa94c24325,94317,94184,6,0,0,19141,749,0.0022137,4959,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes audit log,4,bced0993-a2af-4448-a4de-4bfa94c24325,94292,94184,8,0,0,19927,658,0.0022559,4513,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes CSV export,5,bced0993-a2af-4448-a4de-4bfa94c24325,94292,94184,10,0,0,20619,710,0.0023458999999999997,4396,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes Slack notifications,6,bced0993-a2af-4448-a4de-4bfa94c24325,94303,94184,12,0,0,21369,518,0.0023441,3532,none,,1,1,0,0.0
+growing_20,growing,20,100,1,scope includes funnel dashboard,7,bced0993-a2af-4448-a4de-4bfa94c24325,94302,94184,12,0,0,21928,799,0.0025124,5236,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes localization,8,bced0993-a2af-4448-a4de-4bfa94c24325,94300,94184,12,0,0,21954,635,0.0024494,4840,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes document upload,9,bced0993-a2af-4448-a4de-4bfa94c24325,94295,94184,12,0,0,22277,813,0.0025529000000000003,5200,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes virus scanning,10,bced0993-a2af-4448-a4de-4bfa94c24325,94296,94184,12,0,0,22377,808,0.0025609,5334,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes CRM webhooks,11,bced0993-a2af-4448-a4de-4bfa94c24325,94302,94184,12,0,0,22557,795,0.0025737000000000004,5518,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes internal comments,12,bced0993-a2af-4448-a4de-4bfa94c24325,94297,94184,12,0,0,22670,585,0.0025009999999999998,4203,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes saved filters,13,bced0993-a2af-4448-a4de-4bfa94c24325,94289,94184,12,0,0,22747,769,0.0025823,5103,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes weekly digest emails,14,bced0993-a2af-4448-a4de-4bfa94c24325,94303,94184,12,0,0,22727,792,0.0025895000000000002,5058,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes SAML SSO,15,bced0993-a2af-4448-a4de-4bfa94c24325,94266,94184,12,0,0,22895,910,0.0026535,5832,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes SCIM provisioning,16,bced0993-a2af-4448-a4de-4bfa94c24325,94295,94184,12,0,0,23039,860,0.0026479000000000003,5579,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes data retention controls,17,bced0993-a2af-4448-a4de-4bfa94c24325,94301,94184,12,0,0,23122,860,0.0026562,5262,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes billing usage,18,bced0993-a2af-4448-a4de-4bfa94c24325,94289,94184,12,0,0,23183,705,0.0026003000000000003,4728,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes public API keys,19,bced0993-a2af-4448-a4de-4bfa94c24325,94291,94184,12,0,0,23335,865,0.0026795,5451,none,,0,1,0,0.0
+growing_20,growing,20,100,1,scope includes production observability,20,bced0993-a2af-4448-a4de-4bfa94c24325,94303,94184,12,0,0,23443,941,0.0027207000000000004,6149,none,,0,1,0,0.0
+pivot_1,pivot,1,0,1,project name: Atlas Field,1,be6d63a4-2dc2-493d-89e0-7ae2fac73239,75,0,2,0,0,1084,746,0.0004068,4585,none,,0,1,1,1.0
+pivot_1,pivot,1,20,1,project name: Atlas Field,1,7eeaf62b-b3f4-4f96-8b4d-d314d43c31e7,18852,18776,2,0,0,4461,479,0.0006376999999999999,3407,none,,1,1,1,1.0
+pivot_1,pivot,1,100,1,project name: Atlas Field,1,1e798301-daf6-462b-a0b1-1ef459da29b0,94260,94184,2,0,0,17872,831,0.0021196,5551,none,,0,1,1,1.0
+pivot_6,pivot,6,0,1,project name: Atlas Field,1,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,75,0,2,0,0,1084,620,0.0003564,4197,none,,0,1,1,1.0
+pivot_6,pivot,6,0,1,stack includes React,2,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,103,0,4,0,0,1780,456,0.0003604,2828,none,,1,1,0,0.0
+pivot_6,pivot,6,0,1,scope includes offline drafts,3,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,110,0,6,0,0,2274,541,0.00044380000000000005,3064,none,,1,1,0,0.0
+pivot_6,pivot,6,0,1,scope includes photo capture,4,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,113,0,8,0,0,2870,657,0.0005498,3434,none,,1,1,0,0.0
+pivot_6,pivot,6,0,1,stack includes Flutter,5,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,126,0,10,0,0,3549,583,0.0005881,3587,none,,1,1,0,0.0
+pivot_6,pivot,6,0,1,stack keeps FastAPI,6,ccc918b3-e4e9-4a5c-b6f6-973d0ba300a4,91,0,12,0,0,4205,581,0.0006529000000000001,3023,none,,1,1,0,0.0
+pivot_6,pivot,6,20,1,project name: Atlas Field,1,3a72493a-a11f-4050-be42-9c8491d852e5,18852,18776,2,0,0,4461,484,0.0006397,3576,none,,1,1,1,1.0
+pivot_6,pivot,6,20,1,stack includes React,2,3a72493a-a11f-4050-be42-9c8491d852e5,18880,18776,4,0,0,5044,689,0.0007800000000000001,3994,none,,1,1,0,0.0
+pivot_6,pivot,6,20,1,scope includes offline drafts,3,3a72493a-a11f-4050-be42-9c8491d852e5,18887,18776,6,0,0,5771,758,0.0008803,3808,none,,1,1,0,0.0
+pivot_6,pivot,6,20,1,scope includes photo capture,4,3a72493a-a11f-4050-be42-9c8491d852e5,18890,18776,8,0,0,6568,860,0.0010008,5141,none,,0,1,0,0.0
+pivot_6,pivot,6,20,1,stack includes Flutter,5,3a72493a-a11f-4050-be42-9c8491d852e5,18903,18776,10,0,0,7471,932,0.0011199,4618,none,,0,1,0,0.0
+pivot_6,pivot,6,20,1,stack keeps FastAPI,6,3a72493a-a11f-4050-be42-9c8491d852e5,18868,18776,12,0,0,8463,986,0.0012407,5404,none,,0,1,0,0.0
+pivot_6,pivot,6,100,1,project name: Atlas Field,1,71fe2769-4ca7-4689-a107-094ded62bed9,94260,94184,2,0,0,17872,836,0.0021216,5351,none,,0,1,1,1.0
+pivot_6,pivot,6,100,1,stack includes React,2,71fe2769-4ca7-4689-a107-094ded62bed9,94288,94184,4,0,0,18806,723,0.0021698,4481,none,,0,1,0,0.0
+pivot_6,pivot,6,100,1,scope includes offline drafts,3,71fe2769-4ca7-4689-a107-094ded62bed9,94295,94184,6,0,0,19567,769,0.0022643,4743,none,,0,1,0,0.0
+pivot_6,pivot,6,100,1,scope includes photo capture,4,71fe2769-4ca7-4689-a107-094ded62bed9,94298,94184,8,0,0,20353,912,0.0024001,5328,none,,0,1,0,0.0
+pivot_6,pivot,6,100,1,stack includes Flutter,5,71fe2769-4ca7-4689-a107-094ded62bed9,94311,94184,10,0,0,21332,961,0.0025176,6237,none,,0,1,0,0.0
+pivot_6,pivot,6,100,1,stack keeps FastAPI,6,71fe2769-4ca7-4689-a107-094ded62bed9,94276,94184,12,0,0,22346,833,0.0025678000000000003,5260,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,project name: Atlas Field,1,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,75,0,2,0,0,1084,524,0.00031800000000000003,3331,none,,1,1,1,1.0
+pivot_20,pivot,20,0,1,stack includes React,2,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,103,0,4,0,0,1684,532,0.00038120000000000005,2568,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes offline drafts,3,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,110,0,6,0,0,2254,624,0.000475,3180,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes photo capture,4,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,113,0,8,0,0,2909,765,0.0005969,3872,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,stack includes Flutter,5,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,126,0,10,0,0,3708,683,0.000644,4229,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,stack keeps FastAPI,6,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,91,0,12,0,0,4436,775,0.0007536,4512,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,storage includes SQLite on device,7,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,117,0,12,0,0,5234,834,0.0008570000000000001,4124,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes push notifications,8,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,117,0,12,0,0,5566,894,0.0009142,4867,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes supervisor review,9,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,110,0,12,0,0,5948,757,0.0008976,4476,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,admin portal stays React,10,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,110,0,12,0,0,6097,627,0.0008604999999999999,3681,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes maps,11,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,90,0,12,0,0,5950,635,0.0008490000000000001,3739,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes camera compression,12,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,112,0,12,0,0,5935,468,0.0007807000000000001,2989,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes conflict resolution,13,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,119,0,12,0,0,5653,673,0.0008345,3948,none,,1,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes PDF reports,14,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,94,0,12,0,0,5498,743,0.0008470000000000001,4204,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes geofencing alerts,15,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,119,0,12,0,0,5366,914,0.0009022,5196,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes role permissions,16,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,113,0,12,0,0,5537,838,0.0008889000000000001,5290,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes asset registry integration,17,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,110,0,12,0,0,5756,827,0.0009064,4976,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes background sync retries,18,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,106,0,12,0,0,5961,746,0.0008945000000000001,4399,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes crash reporting,19,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,95,0,12,0,0,6247,715,0.0009107000000000001,4516,none,,0,1,0,0.0
+pivot_20,pivot,20,0,1,scope includes phased mobile rollout,20,fc3c5c7a-1a91-423b-87c3-38b4ade07bed,122,0,12,0,0,6319,867,0.0009787,5489,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,project name: Atlas Field,1,7ee0911f-6e02-496f-b0b1-63393814cf56,18852,18776,2,0,0,4461,699,0.0007257,4399,none,,0,1,1,1.0
+pivot_20,pivot,20,20,1,stack includes React,2,7ee0911f-6e02-496f-b0b1-63393814cf56,18880,18776,4,0,0,5259,610,0.0007699,3628,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes offline drafts,3,7ee0911f-6e02-496f-b0b1-63393814cf56,18887,18776,6,0,0,5907,694,0.0008683,3488,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes photo capture,4,7ee0911f-6e02-496f-b0b1-63393814cf56,18890,18776,8,0,0,6640,793,0.0009812000000000002,3710,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,stack includes Flutter,5,7ee0911f-6e02-496f-b0b1-63393814cf56,18903,18776,10,0,0,7469,811,0.0010713,3770,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,stack keeps FastAPI,6,7ee0911f-6e02-496f-b0b1-63393814cf56,18868,18776,12,0,0,8338,808,0.001157,3845,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,storage includes SQLite on device,7,7ee0911f-6e02-496f-b0b1-63393814cf56,18894,18776,12,0,0,9169,823,0.0012461,3816,none,,1,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes push notifications,8,7ee0911f-6e02-496f-b0b1-63393814cf56,18894,18776,12,0,0,9297,925,0.0012997,4137,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes supervisor review,9,7ee0911f-6e02-496f-b0b1-63393814cf56,18887,18776,12,0,0,9632,1134,0.0014168,5022,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,admin portal stays React,10,7ee0911f-6e02-496f-b0b1-63393814cf56,18887,18776,12,0,0,10075,950,0.0013875000000000003,4445,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes maps,11,7ee0911f-6e02-496f-b0b1-63393814cf56,18867,18776,12,0,0,10233,1133,0.0014765000000000002,4869,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes camera compression,12,7ee0911f-6e02-496f-b0b1-63393814cf56,18889,18776,12,0,0,10584,1190,0.0015344,5424,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes conflict resolution,13,7ee0911f-6e02-496f-b0b1-63393814cf56,18896,18776,12,0,0,10977,1019,0.0015053,4695,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes PDF reports,14,7ee0911f-6e02-496f-b0b1-63393814cf56,18871,18776,12,0,0,11179,1072,0.0015467,4720,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes geofencing alerts,15,7ee0911f-6e02-496f-b0b1-63393814cf56,18896,18776,12,0,0,11339,1255,0.0016359,5875,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes role permissions,16,7ee0911f-6e02-496f-b0b1-63393814cf56,18890,18776,12,0,0,11474,1411,0.0017117999999999999,7737,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes asset registry integration,17,7ee0911f-6e02-496f-b0b1-63393814cf56,18887,18776,12,0,0,11943,1599,0.0018339000000000003,7142,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes background sync retries,18,7ee0911f-6e02-496f-b0b1-63393814cf56,18883,18776,12,0,0,12409,1568,0.0018681000000000001,6834,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes crash reporting,19,7ee0911f-6e02-496f-b0b1-63393814cf56,18872,18776,12,0,0,12808,1548,0.0019000000000000002,6913,none,,0,1,0,0.0
+pivot_20,pivot,20,20,1,scope includes phased mobile rollout,20,7ee0911f-6e02-496f-b0b1-63393814cf56,18899,18776,12,0,0,13354,1527,0.0019462,7042,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,project name: Atlas Field,1,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94260,94184,2,0,0,17872,737,0.002082,4937,none,,0,1,1,1.0
+pivot_20,pivot,20,100,1,stack includes React,2,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94288,94184,4,0,0,18707,897,0.0022295000000000006,5769,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes offline drafts,3,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94295,94184,6,0,0,19642,1037,0.002379,5984,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes photo capture,4,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94298,94184,8,0,0,20718,1122,0.0025206,6049,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,stack includes Flutter,5,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94311,94184,10,0,0,21884,1244,0.002686,6223,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,stack keeps FastAPI,6,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94276,94184,12,0,0,23181,1166,0.0027845,5916,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,storage includes SQLite on device,7,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94302,94184,12,0,0,24386,1261,0.0029430000000000003,5644,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes push notifications,8,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94302,94184,12,0,0,24924,1487,0.0030872000000000004,7208,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes supervisor review,9,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94295,94184,12,0,0,25544,1112,0.0029992,7354,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,admin portal stays React,10,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94295,94184,12,0,0,25635,1710,0.0032475000000000004,8758,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes maps,11,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94275,94184,12,0,0,26215,1249,0.0031211,7668,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes camera compression,12,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94297,94184,12,0,0,26257,892,0.0029825,5420,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes conflict resolution,13,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94304,94184,12,0,0,25994,1047,0.0030182,6102,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes PDF reports,14,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94279,94184,12,0,0,25796,1081,0.003012,6518,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes geofencing alerts,15,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94304,94184,12,0,0,25400,1306,0.0030624000000000003,6903,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes role permissions,16,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94298,94184,12,0,0,25617,1165,0.0030277000000000004,6593,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes asset registry integration,17,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94295,94184,12,0,0,25093,1344,0.0030469000000000004,7153,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes background sync retries,18,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94291,94184,12,0,0,25201,1029,0.0029317000000000006,5635,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes crash reporting,19,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94280,94184,12,0,0,25346,850,0.0028746,5005,none,,0,1,0,0.0
+pivot_20,pivot,20,100,1,scope includes phased mobile rollout,20,5a4e39a5-1b0c-4e63-8784-93f9f520ff90,94307,94184,12,0,0,25208,1016,0.0029272,6160,none,,0,1,0,0.0
+contradiction_1,contradiction,1,0,1,project name: LedgerFlow,1,5cce6aaa-a607-4495-b89d-d7e76b78f099,70,0,2,0,0,1082,393,0.00026540000000000005,2340,none,,1,1,1,1.0
+contradiction_1,contradiction,1,20,1,project name: LedgerFlow,1,eb7661eb-92a4-4f81-bd32-bcdd8c81531d,18847,18776,2,0,0,4459,681,0.0007183000000000001,3695,none,,1,1,1,1.0
+contradiction_1,contradiction,1,100,1,project name: LedgerFlow,1,6dd85f88-9e26-4655-ab6f-5998bfd9cc46,94255,94184,2,0,0,17870,746,0.0020854000000000003,4267,none,,0,1,1,1.0
+contradiction_6,contradiction,6,0,1,project name: LedgerFlow,1,3bd28549-bde4-494b-a5d8-473a06e8c73c,70,0,2,0,0,1082,522,0.000317,3310,none,,1,1,1,1.0
+contradiction_6,contradiction,6,0,1,scope includes invoice approvals,2,3bd28549-bde4-494b-a5d8-473a06e8c73c,118,0,4,0,0,1658,501,0.0003662,2920,none,,1,1,0,0.0
+contradiction_6,contradiction,6,0,1,budget locked: 30000 EUR,3,3bd28549-bde4-494b-a5d8-473a06e8c73c,50,0,6,0,0,2183,638,0.00047350000000000007,3785,none,,1,1,0,0.0
+contradiction_6,contradiction,6,0,1,stack includes Django,4,3bd28549-bde4-494b-a5d8-473a06e8c73c,94,0,8,0,0,2856,722,0.0005744000000000001,3542,none,,1,1,0,0.0
+contradiction_6,contradiction,6,0,1,scope includes approval chains,5,3bd28549-bde4-494b-a5d8-473a06e8c73c,105,0,10,0,0,3629,539,0.0005785,3102,none,,1,1,0,0.0
+contradiction_6,contradiction,6,0,1,scope includes ERP CSV export,6,3bd28549-bde4-494b-a5d8-473a06e8c73c,87,0,12,0,0,4198,546,0.0006382000000000001,3154,none,,1,1,0,0.2
+contradiction_6,contradiction,6,20,1,project name: LedgerFlow,1,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18847,18776,2,0,0,4459,730,0.0007379000000000001,4261,none,,0,1,1,1.0
+contradiction_6,contradiction,6,20,1,scope includes invoice approvals,2,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18895,18776,4,0,0,5265,708,0.0008097,3700,none,,1,1,0,0.0
+contradiction_6,contradiction,6,20,1,budget locked: 30000 EUR,3,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18827,18776,6,0,0,6000,906,0.0009624000000000001,4817,none,,0,1,0,0.0
+contradiction_6,contradiction,6,20,1,stack includes Django,4,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18871,18776,8,0,0,6993,715,0.0009853000000000002,3612,none,,1,1,0,0.333
+contradiction_6,contradiction,6,20,1,scope includes approval chains,5,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18882,18776,10,0,0,7759,819,0.0011035,4954,none,,0,1,0,0.25
+contradiction_6,contradiction,6,20,1,scope includes ERP CSV export,6,4fcabe7f-d4c4-40cf-b3bb-77bfc3fe7943,18864,18776,12,0,0,8609,725,0.0011509,4313,none,,0,1,0,0.4
+contradiction_6,contradiction,6,100,1,project name: LedgerFlow,1,2f30c636-c056-4ead-9e9f-103fa40442c2,94255,94184,2,0,0,17870,978,0.0021782,5957,none,,0,1,1,1.0
+contradiction_6,contradiction,6,100,1,scope includes invoice approvals,2,2f30c636-c056-4ead-9e9f-103fa40442c2,94303,94184,4,0,0,18924,791,0.0022088,4244,none,,0,1,0,0.0
+contradiction_6,contradiction,6,100,1,budget locked: 30000 EUR,3,2f30c636-c056-4ead-9e9f-103fa40442c2,94235,94184,6,0,0,19742,937,0.0023490000000000004,6434,none,,0,1,0,0.0
+contradiction_6,contradiction,6,100,1,stack includes Django,4,2f30c636-c056-4ead-9e9f-103fa40442c2,94279,94184,8,0,0,20714,1009,0.002475,5729,none,,0,1,0,0.333
+contradiction_6,contradiction,6,100,1,scope includes approval chains,5,2f30c636-c056-4ead-9e9f-103fa40442c2,94290,94184,10,0,0,21826,1132,0.0026354000000000004,6061,none,,0,1,0,0.25
+contradiction_6,contradiction,6,100,1,scope includes ERP CSV export,6,2f30c636-c056-4ead-9e9f-103fa40442c2,94272,94184,12,0,0,23066,1090,0.0027426000000000004,5823,none,,0,1,0,0.2
+contradiction_20,contradiction,20,0,1,project name: LedgerFlow,1,8c13b5e9-b610-4cc3-ab6f-997624163144,70,0,2,0,0,1082,571,0.00033660000000000005,3624,none,,1,1,1,1.0
+contradiction_20,contradiction,20,0,1,scope includes invoice approvals,2,8c13b5e9-b610-4cc3-ab6f-997624163144,118,0,4,0,0,1730,490,0.00036899999999999997,2862,none,,1,1,0,0.0
+contradiction_20,contradiction,20,0,1,budget locked: 30000 EUR,3,8c13b5e9-b610-4cc3-ab6f-997624163144,50,0,6,0,0,2248,490,0.00042080000000000004,2591,none,,1,1,0,0.0
+contradiction_20,contradiction,20,0,1,stack includes Django,4,8c13b5e9-b610-4cc3-ab6f-997624163144,94,0,8,0,0,2781,578,0.0005093000000000001,3499,none,,1,1,0,0.333
+contradiction_20,contradiction,20,0,1,scope includes approval chains,5,8c13b5e9-b610-4cc3-ab6f-997624163144,105,0,10,0,0,3396,572,0.0005684,3440,none,,1,1,0,0.25
+contradiction_20,contradiction,20,0,1,scope includes ERP CSV export,6,8c13b5e9-b610-4cc3-ab6f-997624163144,87,0,12,0,0,3997,588,0.0006349,3174,none,,1,1,0,0.2
+contradiction_20,contradiction,20,0,1,scope includes finance audit trail,7,8c13b5e9-b610-4cc3-ab6f-997624163144,108,0,12,0,0,4625,627,0.0007133,3645,none,,1,1,0,0.167
+contradiction_20,contradiction,20,0,1,budget locked: 80000 EUR,8,8c13b5e9-b610-4cc3-ab6f-997624163144,77,0,12,0,0,4700,802,0.0007908,4099,none,,0,1,0,0.0
+contradiction_20,contradiction,20,0,1,stack includes React frontend,9,8c13b5e9-b610-4cc3-ab6f-997624163144,124,0,12,0,0,5027,733,0.0007959,3759,none,,1,1,0,0.125
+contradiction_20,contradiction,20,0,1,stack keeps Django API,10,8c13b5e9-b610-4cc3-ab6f-997624163144,85,0,12,0,0,5289,817,0.0008557,4257,none,,0,1,0,0.111
+contradiction_20,contradiction,20,0,1,scope includes Azure AD SSO,11,8c13b5e9-b610-4cc3-ab6f-997624163144,89,0,12,0,0,5539,750,0.0008539,3530,none,,1,1,0,0.1
+contradiction_20,contradiction,20,0,1,scope includes overdue approval emails,12,8c13b5e9-b610-4cc3-ab6f-997624163144,122,0,12,0,0,5760,788,0.0008912,3610,none,,1,1,0,0.091
+contradiction_20,contradiction,20,0,1,scope includes exception reports,13,8c13b5e9-b610-4cc3-ab6f-997624163144,109,0,12,0,0,5974,782,0.0009102000000000001,3661,none,,1,1,0,0.083
+contradiction_20,contradiction,20,0,1,scope includes monthly close dashboards,14,8c13b5e9-b610-4cc3-ab6f-997624163144,108,0,12,0,0,6134,821,0.0009418,3958,none,,1,1,0,0.077
+contradiction_20,contradiction,20,0,1,phase one excludes invoices,15,8c13b5e9-b610-4cc3-ab6f-997624163144,120,0,12,0,0,6165,865,0.0009625,4084,none,,0,1,0,0.071
+contradiction_20,contradiction,20,0,1,scope includes quote attachments,16,8c13b5e9-b610-4cc3-ab6f-997624163144,111,0,12,0,0,6298,794,0.0009474,3845,none,,1,1,0,0.067
+contradiction_20,contradiction,20,0,1,scope includes vendor lookup,17,8c13b5e9-b610-4cc3-ab6f-997624163144,86,0,12,0,0,6284,831,0.0009608,4455,none,,0,1,0,0.062
+contradiction_20,contradiction,20,0,1,scope includes cost center permissions,18,8c13b5e9-b610-4cc3-ab6f-997624163144,104,0,12,0,0,6381,965,0.0010241,4687,none,,0,1,0,0.059
+contradiction_20,contradiction,20,0,1,scope includes immutable approval records,19,8c13b5e9-b610-4cc3-ab6f-997624163144,108,0,12,0,0,6561,977,0.0010469000000000001,4839,none,,0,1,0,0.056
+contradiction_20,contradiction,20,0,1,deadline before Q4 close,20,8c13b5e9-b610-4cc3-ab6f-997624163144,93,0,12,0,0,6754,893,0.0010326,4778,none,,0,1,0,0.053
+contradiction_20,contradiction,20,20,1,project name: LedgerFlow,1,8026988d-eefe-434d-87b6-7aa9894f3a9a,18847,18776,2,0,0,4459,538,0.0006611000000000001,3246,none,,1,1,1,1.0
+contradiction_20,contradiction,20,20,1,scope includes invoice approvals,2,8026988d-eefe-434d-87b6-7aa9894f3a9a,18895,18776,4,0,0,5073,569,0.0007349,3475,none,,1,1,0,0.0
+contradiction_20,contradiction,20,20,1,budget locked: 30000 EUR,3,8026988d-eefe-434d-87b6-7aa9894f3a9a,18827,18776,6,0,0,5669,705,0.0008489000000000001,4262,none,,0,1,0,0.0
+contradiction_20,contradiction,20,20,1,stack includes Django,4,8026988d-eefe-434d-87b6-7aa9894f3a9a,18871,18776,8,0,0,6409,641,0.0008973,3641,none,,1,1,0,0.333
+contradiction_20,contradiction,20,20,1,scope includes approval chains,5,8026988d-eefe-434d-87b6-7aa9894f3a9a,18882,18776,10,0,0,7101,671,0.0009785,3638,none,,1,1,0,0.25
+contradiction_20,contradiction,20,20,1,scope includes ERP CSV export,6,8026988d-eefe-434d-87b6-7aa9894f3a9a,18864,18776,12,0,0,7802,672,0.001049,3919,none,,1,1,0,0.4
+contradiction_20,contradiction,20,20,1,scope includes finance audit trail,7,8026988d-eefe-434d-87b6-7aa9894f3a9a,18885,18776,12,0,0,8535,635,0.0011075,3732,none,,1,1,0,0.333
+contradiction_20,contradiction,20,20,1,budget locked: 80000 EUR,8,8026988d-eefe-434d-87b6-7aa9894f3a9a,18854,18776,12,0,0,8657,788,0.0011809000000000001,4191,none,,0,1,0,0.286
+contradiction_20,contradiction,20,20,1,stack includes React frontend,9,8026988d-eefe-434d-87b6-7aa9894f3a9a,18901,18776,12,0,0,8904,792,0.0012072,4087,none,,0,1,0,0.375
+contradiction_20,contradiction,20,20,1,stack keeps Django API,10,8026988d-eefe-434d-87b6-7aa9894f3a9a,18862,18776,12,0,0,9016,748,0.0012008000000000001,3939,none,,1,1,0,0.333
+contradiction_20,contradiction,20,20,1,scope includes Azure AD SSO,11,8026988d-eefe-434d-87b6-7aa9894f3a9a,18866,18776,12,0,0,9134,638,0.0011686,3964,none,,1,1,0,0.3
+contradiction_20,contradiction,20,20,1,scope includes overdue approval emails,12,8026988d-eefe-434d-87b6-7aa9894f3a9a,18899,18776,12,0,0,9147,654,0.0011763000000000001,3487,none,,1,1,0,0.364
+contradiction_20,contradiction,20,20,1,scope includes exception reports,13,8026988d-eefe-434d-87b6-7aa9894f3a9a,18886,18776,12,0,0,9144,568,0.0011416,3342,none,,1,1,0,0.417
+contradiction_20,contradiction,20,20,1,scope includes monthly close dashboards,14,8026988d-eefe-434d-87b6-7aa9894f3a9a,18885,18776,12,0,0,9091,497,0.0011079,2982,none,,1,1,0,0.462
+contradiction_20,contradiction,20,20,1,phase one excludes invoices,15,8026988d-eefe-434d-87b6-7aa9894f3a9a,18897,18776,12,0,0,8813,930,0.0012533000000000002,4549,none,,0,1,0,0.5
+contradiction_20,contradiction,20,20,1,scope includes quote attachments,16,8026988d-eefe-434d-87b6-7aa9894f3a9a,18888,18776,12,0,0,8957,826,0.0012261,4396,none,,0,1,0,0.533
+contradiction_20,contradiction,20,20,1,scope includes vendor lookup,17,8026988d-eefe-434d-87b6-7aa9894f3a9a,18863,18776,12,0,0,9070,705,0.001189,3945,none,,1,1,0,0.562
+contradiction_20,contradiction,20,20,1,scope includes cost center permissions,18,8026988d-eefe-434d-87b6-7aa9894f3a9a,18881,18776,12,0,0,9145,682,0.0011873,3703,none,,1,1,0,0.588
+contradiction_20,contradiction,20,20,1,scope includes immutable approval records,19,8026988d-eefe-434d-87b6-7aa9894f3a9a,18885,18776,12,0,0,9195,743,0.0012167,4155,none,,0,1,0,0.611
+contradiction_20,contradiction,20,20,1,deadline before Q4 close,20,8026988d-eefe-434d-87b6-7aa9894f3a9a,18870,18776,12,0,0,9370,1049,0.0013566,5240,none,,0,1,0,0.632
+contradiction_20,contradiction,20,100,1,project name: LedgerFlow,1,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94255,94184,2,0,0,17870,745,0.002085,4798,none,,0,1,1,1.0
+contradiction_20,contradiction,20,100,1,scope includes invoice approvals,2,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94303,94184,4,0,0,18690,635,0.002123,4021,none,,0,1,0,0.0
+contradiction_20,contradiction,20,100,1,budget locked: 30000 EUR,3,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94235,94184,6,0,0,19352,731,0.0022276,4642,none,,0,1,0,0.0
+contradiction_20,contradiction,20,100,1,stack includes Django,4,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94279,94184,8,0,0,20118,854,0.0023534000000000003,5080,none,,0,1,0,0.333
+contradiction_20,contradiction,20,100,1,scope includes approval chains,5,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94290,94184,10,0,0,21055,671,0.0023739,4273,none,,0,1,0,0.25
+contradiction_20,contradiction,20,100,1,scope includes ERP CSV export,6,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94272,94184,12,0,0,21755,756,0.0024779,4611,none,,0,1,0,0.2
+contradiction_20,contradiction,20,100,1,scope includes finance audit trail,7,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94293,94184,12,0,0,22553,605,0.0024973,4069,none,,0,1,0,0.167
+contradiction_20,contradiction,20,100,1,budget locked: 80000 EUR,8,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94262,94184,12,0,0,22428,1283,0.002756,7281,none,,0,1,0,0.0
+contradiction_20,contradiction,20,100,1,stack includes React frontend,9,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94309,94184,12,0,0,23096,1013,0.0027148,5736,none,,0,1,0,0.125
+contradiction_20,contradiction,20,100,1,stack keeps Django API,10,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94270,94184,12,0,0,23413,1077,0.0027721000000000004,6172,none,,0,1,0,0.111
+contradiction_20,contradiction,20,100,1,scope includes Azure AD SSO,11,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94274,94184,12,0,0,23659,904,0.0027275000000000003,5418,none,,0,1,0,0.1
+contradiction_20,contradiction,20,100,1,scope includes overdue approval emails,12,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94307,94184,12,0,0,23950,737,0.0026898,4224,none,,0,1,0,0.091
+contradiction_20,contradiction,20,100,1,scope includes exception reports,13,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94294,94184,12,0,0,23977,887,0.0027525,5219,none,,0,1,0,0.167
+contradiction_20,contradiction,20,100,1,scope includes monthly close dashboards,14,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94293,94184,12,0,0,24265,841,0.0027629,4542,none,,0,1,0,0.231
+contradiction_20,contradiction,20,100,1,phase one excludes invoices,15,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94305,94184,12,0,0,23836,1239,0.0028792,7080,none,,0,1,0,0.286
+contradiction_20,contradiction,20,100,1,scope includes quote attachments,16,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94296,94184,12,0,0,24061,1034,0.0028197,5748,none,,0,1,0,0.267
+contradiction_20,contradiction,20,100,1,scope includes vendor lookup,17,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94271,94184,12,0,0,24072,971,0.0027956,5788,none,,0,1,0,0.312
+contradiction_20,contradiction,20,100,1,scope includes cost center permissions,18,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94289,94184,12,0,0,24140,993,0.0028112000000000002,6177,none,,0,1,0,0.353
+contradiction_20,contradiction,20,100,1,scope includes immutable approval records,19,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94293,94184,12,0,0,24418,1087,0.0028766,5905,none,,0,1,0,0.389
+contradiction_20,contradiction,20,100,1,deadline before Q4 close,20,4e4d7ce5-9e6b-4bd1-b2d4-a2a6dd96f5ad,94278,94184,12,0,0,24629,1020,0.0028709000000000004,5738,none,,0,1,0,0.421
