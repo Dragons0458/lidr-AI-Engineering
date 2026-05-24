@@ -18,3 +18,7 @@ wheels/
 .vscode
 .idea
 .claude/
+
+# Stress-test generated fixtures
+evals/stress/fixtures/attach_*.pdf
+evals/stress/results_smoke.csv
