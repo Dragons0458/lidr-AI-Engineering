@@ -8,6 +8,7 @@ import structlog
 
 from app.config import get_settings
 from app.routers.estimations import router as estimation_router
+from app.routers.ingestion import router as ingestion_router
 from app.routers.sessions import router as sessions_router
 
 
@@ -43,6 +44,18 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.APP_ENV, settings.LOG_LEVEL)
     log = structlog.get_logger()
+    try:
+        from app.dependencies import get_catalog
+
+        catalog = get_catalog()
+        log.info(
+            "catalog_loaded",
+            version=catalog.version,
+            sources_total=len(catalog.sources),
+            sources_included=len(catalog.included_sources()),
+        )
+    except Exception as exc:
+        log.error("catalog_load_failed", error=str(exc)[:400])
     log.info("application_started", environment=settings.APP_ENV)
     yield
     log.info("application_shutdown")
@@ -81,6 +94,7 @@ app.add_middleware(
 
 app.include_router(estimation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
+app.include_router(ingestion_router)
 
 
 @app.get("/health")
