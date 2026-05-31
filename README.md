@@ -6,9 +6,10 @@ reuniones usando LLMs a través de LiteLLM.
 ## Inicio rápido (Docker Compose)
 
 El stack incluye **Redis Stack** (`redis/redis-stack:latest`) para caché exact-match y
-búsqueda vectorial (caché semántico con RediSearch). La API recibe
-`REDIS_URL=redis://redis:6379` automáticamente en Compose. RedisInsight opcional en el
-puerto `8001`.
+búsqueda vectorial (caché semántico con RediSearch), y **Postgres** (`pgvector/pgvector:pg16`)
+para ingesta y pseudonimización (Sesión 6). La API recibe `REDIS_URL=redis://redis:6379` y
+`DATABASE_URL=postgresql+psycopg://estimator:estimator@postgres:5432/estimator` en Compose.
+RedisInsight opcional en el puerto `8001`; Postgres expuesto en el host en el puerto `5433`.
 
 1. Crea el archivo de entorno:
 
@@ -98,6 +99,9 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Memoria de sesión con `<project_metadata>` inyectado en el system prompt.
 - **Sesión 5** (opt-in vía `.env`): tier resolver, compresión de memoria (anclas + resumen) y
   Actor-Critic-Boss con `EstimationResult` estructurado (`POST .../estimate-acb`).
+- **Sesión 6** (data-driven AI): catálogo YAML de fuentes, ingesta JSON/TXT, limpieza con
+  pandas/Pandera, pseudonimización PII/GDPR (Presidio + Faker), jobs en Postgres y API
+  `POST/GET /api/v1/ingestion/*`.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - Interfaz de Streamlit para pruebas interactivas y uso demostrativo.
@@ -113,6 +117,9 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Streamlit
 - Structlog
 - RedisVL + NumPy (caché semántico)
+- SQLAlchemy 2.0 + Alembic + psycopg (Postgres)
+- pandas + Pandera (limpieza y validación de presupuestos)
+- Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
 - UV (se incluye el lockfile del proyecto como `uv.lock`)
 
@@ -124,17 +131,29 @@ app/
   config.py                      # Configuración basada en variables de entorno
   guardrails/                    # Input/output guardrails (moderación, PII, scope)
   cache/semantic.py              # Caché semántico RedisVL
-  routers/estimations.py         # Endpoints de la API
+  ingestion/                     # Catálogo, parsers JSON/TXT, limpieza, PII, orquestador
+  persistence/                   # SQLAlchemy + repositorios (jobs, pseudonym mappings)
+  routers/estimations.py         # Endpoints de estimación
+  routers/ingestion.py           # POST /ingestion/runs, GET /ingestion/jobs/{id}
   services/estimation_service.py # Pipeline LLM + cachés + guardrails
   services/sessions.py           # Estado de sesión y ProjectMetadata en memoria
   services/project_metadata_extractor.py # Extracción LLM de hechos del proyecto
   formatters/llm_formatters.py   # Mapea la salida del LLM a la respuesta de la API
   schemas/estimation.py          # Solicitud/respuesta y enums
+  schemas/ingestion.py           # Contratos HTTP de ingesta
   prompts/
     loader.py                    # Renderizado Jinja para versiones de prompts
     estimation/
       v1/
       v2/
+alembic/                         # Migraciones Postgres (Sesión 6)
+data/
+  catalog/catalog.yaml           # Decisiones include/review/exclude por fuente
+  seed/                          # Corpus de demo (budgets JSON, transcripts TXT)
+scripts/
+  preflight_s06.py               # Checks de entorno antes de la sesión en vivo
+  demo_cleaning_s06.py           # Demo limpieza + validación Pandera
+  demo_pii_s06.py                # Demo pseudonimización consistente
 streamlit_app.py                 # Frontend de Streamlit (bloqueante)
 streamlit_stream_app.py        # Cliente Streamlit consumiendo SSE
 tests/
@@ -166,6 +185,8 @@ Usando `uv` (recomendado):
 
 ```bash
 uv sync
+# Modelo spaCy en español (Presidio + demo PII)
+uv run python -m spacy download es_core_news_md
 ```
 
 Si necesitas dependencias de desarrollo:
@@ -195,6 +216,13 @@ SEMANTIC_CACHE_TTL=86400
 SEMANTIC_CACHE_LOG_ONLY=false
 INPUT_GUARDRAILS_ENABLED=true
 OUTPUT_GUARDRAILS_ENABLED=true
+# Session 6 — ingestion + Postgres (host port 5433 when using docker compose)
+DATABASE_URL=postgresql+psycopg://estimator:estimator@localhost:5433/estimator
+CATALOG_PATH=data/catalog/catalog.yaml
+INGESTION_DATA_ROOT=data/seed
+PRESIDIO_SPACY_MODEL=es_core_news_md
+PSEUDONYM_FAKER_LOCALE=es_ES
+PSEUDONYM_HASH_SALT=change-me-in-prod
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -221,6 +249,41 @@ Endpoints locales predeterminados:
 - `GET /sessions/{session_id}` (debug: anclas, resumen, tier)
 - `POST /api/v1/estimate`
 - `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
+- `POST /api/v1/ingestion/runs` (202 — dispara ingesta en background)
+- `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
+
+Con Postgres en marcha (`docker compose up` aplica `alembic upgrade head` al arrancar la API):
+
+```bash
+# Fuente incluida en el catálogo → 202 + job_id
+curl -s -X POST http://localhost:8000/api/v1/ingestion/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"source_name":"presupuestos_json"}' | jq
+
+# Consultar estado (TestClient ejecuta BackgroundTasks de forma síncrona; en curl puede requerir un reintento)
+curl -s http://localhost:8000/api/v1/ingestion/jobs/{job_id} | jq
+
+# Fuente en review → 400; fuente desconocida → 404
+curl -s -X POST http://localhost:8000/api/v1/ingestion/runs \
+  -H 'Content-Type: application/json' \
+  -d '{"source_name":"transcripciones_txt"}'
+```
+
+Scripts de la sesión (desde la raíz del repo):
+
+```bash
+uv run python scripts/demo_cleaning_s06.py   # 6 JSON → dedup → 5 filas; 1 descartada (total negativo)
+uv run python scripts/demo_pii_s06.py        # pseudonimización consistente sobre transcripción
+uv run python scripts/preflight_s06.py       # Python, deps, spaCy, catálogo, /health, Postgres+migración
+```
+
+CLIs offline:
+
+```bash
+uv run python -m app.ingestion.architecture
+uv run python -m app.ingestion.catalog.inspect data/seed
+uv run python -m app.ingestion.catalog.loader data/catalog/catalog.yaml
+```
 
 ## Ejecutar la app de Streamlit
 
@@ -531,6 +594,25 @@ curl "http://localhost:8000/api/v1/sessions/{session_id}"
 ```
 
 Streamlit (`streamlit_app.py`): selector de tier, toggle ACB, panel de traza y tabla de fases.
+
+### Sesión 6: ingesta, catálogo y PII/GDPR
+
+| Componente | Rol |
+|------------|-----|
+| `data/catalog/catalog.yaml` | Tres fuentes: `presupuestos_json` (include), `transcripciones_txt` (review), `rate_card_xlsx` (exclude) |
+| `app/ingestion/parsers/` | Solo **JSON** (presupuestos) y **TXT** (transcripciones); sin unstructured/XLSX/DOCX/PDF |
+| `app/ingestion/cleaning/` | Limpieza pandas + esquema Pandera + política valid/quarantine/discard |
+| `app/ingestion/pii/` | Presidio (spaCy ES) + pseudónimos consistentes vía HMAC + Faker |
+| `app/persistence/` | Tablas `ingestion_jobs` y `pseudonym_mappings` (Alembic `0001_session6_initial`) |
+
+Parsers registrados en `default_registry()`: `BudgetJsonParser`, `TranscriptTxtParser`. El XLSX del seed existe solo para inspección del catálogo (`rate_card_xlsx` excluido).
+
+Migraciones locales (sin Docker):
+
+```bash
+docker compose up postgres -d
+uv run alembic upgrade head
+```
 
 ### Guardrails y caché semántico (Sesión 4)
 
