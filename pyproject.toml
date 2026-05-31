@@ -18,6 +18,7 @@ dependencies = [
     "python-dotenv",
     "python-multipart",
     "numpy",
+    "openai>=2.0",
     "redis>=5.0",
     "redisvl",
     "ruff",
@@ -25,6 +26,7 @@ dependencies = [
     "starlette>=1.0.0",
     "streamlit>=1.57.0",
     "structlog",
+    "tiktoken>=0.7",
     "uvicorn[standard]",
     "watchdog>=6.0.0",
     # Session 6 — data-driven AI (ingestion + Postgres + PII/GDPR)

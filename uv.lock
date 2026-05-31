@@ -704,6 +704,7 @@ dependencies = [
     { name = "jinja2" },
     { name = "litellm", extra = ["google"] },
     { name = "numpy" },
+    { name = "openai" },
     { name = "pandas" },
     { name = "pandera" },
     { name = "presidio-analyzer" },
@@ -725,6 +726,7 @@ dependencies = [
     { name = "starlette" },
     { name = "streamlit" },
     { name = "structlog" },
+    { name = "tiktoken" },
     { name = "uvicorn", extra = ["standard"] },
     { name = "watchdog" },
 ]
@@ -748,6 +750,7 @@ requires-dist = [
     { name = "litellm" },
     { name = "litellm", extras = ["google"] },
     { name = "numpy" },
+    { name = "openai", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=2.2" },
     { name = "pandera", specifier = ">=0.20" },
     { name = "presidio-analyzer", specifier = ">=2.2" },
@@ -769,6 +772,7 @@ requires-dist = [
     { name = "starlette", specifier = ">=1.0.0" },
     { name = "streamlit", specifier = ">=1.57.0" },
     { name = "structlog" },
+    { name = "tiktoken", specifier = ">=0.7" },
     { name = "uvicorn", extras = ["standard"] },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
