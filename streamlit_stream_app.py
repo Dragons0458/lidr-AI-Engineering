@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 import os
 from collections.abc import Iterator
 from pathlib import Path
@@ -13,9 +12,9 @@ from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from streamlit_common import MIN_DESCRIPTION_CHARS, env_display, format_api_error
 
 DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
-MIN_DESCRIPTION_CHARS = 10
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -26,51 +25,6 @@ def get_api_base_url() -> str:
         return str(st.secrets.get("ESTIMATION_API_BASE_URL", env_url))
     except StreamlitSecretNotFoundError:
         return env_url
-
-
-def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
-    """Turn httpx/FastAPI errors into a short message for the chat UI."""
-    if isinstance(exc, httpx.HTTPStatusError):
-        status = exc.response.status_code
-        detail = _parse_error_detail(exc.response)
-        if status == 422:
-            return (
-                "**Solicitud rechazada (422)** — la API no pudo validar el mensaje.\n\n"
-                f"{detail}\n\n"
-                f"_Consejo: la descripción debe tener al menos {MIN_DESCRIPTION_CHARS} "
-                "caracteres (p. ej. un resumen de reunión, no solo un saludo)._"
-            )
-        if status == 500:
-            return f"**Error del servidor (500)**\n\n{detail}"
-        return f"**Error HTTP {status}**\n\n{detail}"
-
-    return (
-        f"No se pudo conectar con la API en `{api_base_url}`.\n\n"
-        f"Comprueba que `uvicorn` esté en marcha y que la URL del sidebar sea correcta.\n\n"
-        f"_Detalle técnico: {exc}_"
-    )
-
-
-def _parse_error_detail(response: httpx.Response) -> str:
-    try:
-        body = response.json()
-    except (json.JSONDecodeError, ValueError):
-        text = response.text.strip()
-        return text if text else "Sin cuerpo de respuesta."
-
-    detail = body.get("detail")
-    if isinstance(detail, str):
-        return detail
-    if isinstance(detail, list):
-        lines = []
-        for item in detail:
-            if not isinstance(item, dict):
-                continue
-            loc = " → ".join(str(part) for part in item.get("loc", ()))
-            msg = item.get("msg", "")
-            lines.append(f"- **{loc}**: {msg}" if loc else f"- {msg}")
-        return "\n".join(lines) if lines else json.dumps(body, ensure_ascii=False)
-    return json.dumps(body, ensure_ascii=False, indent=2)
 
 
 def stream_estimation(description: str, *, api_base_url: str) -> Iterator[str]:
@@ -116,11 +70,6 @@ def stream_estimation(description: str, *, api_base_url: str) -> Iterator[str]:
                 )
 
 
-def _env_display(key: str, default: str = "—") -> str:
-    value = os.getenv(key, "").strip()
-    return value if value else default
-
-
 st.set_page_config(page_title="Estimator Stream", page_icon="📊")
 st.title("Software Estimator (streaming)")
 st.caption(
@@ -133,17 +82,17 @@ with st.sidebar:
     api_base_url = st.text_input("API base URL", value=get_api_base_url())
     st.divider()
     st.subheader("Modelos (.env)")
-    st.text_input("LLM_PROVIDER", value=_env_display("LLM_PROVIDER"), disabled=True)
-    st.text_input("PRIMARY_MODEL", value=_env_display("PRIMARY_MODEL"), disabled=True)
+    st.text_input("LLM_PROVIDER", value=env_display("LLM_PROVIDER"), disabled=True)
+    st.text_input("PRIMARY_MODEL", value=env_display("PRIMARY_MODEL"), disabled=True)
     st.text_input(
         "FALLBACK_MODEL",
-        value=_env_display("FALLBACK_MODEL", "(sin fallback)"),
+        value=env_display("FALLBACK_MODEL", "(sin fallback)"),
         disabled=True,
     )
     st.divider()
     st.subheader("Caché (.env)")
-    st.text_input("REDIS_URL", value=_env_display("REDIS_URL"), disabled=True)
-    st.text_input("CACHE_TTL", value=_env_display("CACHE_TTL", "86400"), disabled=True)
+    st.text_input("REDIS_URL", value=env_display("REDIS_URL"), disabled=True)
+    st.text_input("CACHE_TTL", value=env_display("CACHE_TTL", "86400"), disabled=True)
     cache_on = os.getenv("CACHE_ENABLED", "true").strip().lower()
     st.text_input("CACHE_ENABLED", value=cache_on or "true", disabled=True)
     if not os.getenv("PRIMARY_MODEL", "").strip():

@@ -1,10 +1,12 @@
 import json
 import os
+from pathlib import Path
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import time
 
 import httpx
 import streamlit as st
+from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
 from app.schemas.estimation import (
@@ -14,6 +16,9 @@ from app.schemas.estimation import (
     ProjectType,
     ReferenceProject,
 )
+from streamlit_common import env_display, format_api_error, resolve_sidebar_model
+
+load_dotenv(Path(__file__).resolve().parent / ".env")
 
 DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
 REFERENCE_PROJECT_FIELDS = ("name", "summary", "estimated_hours", "team", "outcome")
@@ -109,6 +114,10 @@ def reset_conversation_state() -> None:
     st.session_state.session_id = create_session()
     st.session_state.project_metadata = empty_project_metadata()
     st.session_state.model = "-"
+    st.session_state.provider = "-"
+    st.session_state.cache_hit = False
+    st.session_state.out_of_scope = False
+    st.session_state.cost_usd = 0.0
     st.session_state.prompt_version = "v1"
     st.session_state.response_time = 0.0
     st.session_state.last_estimation = ""
@@ -124,6 +133,10 @@ def clear_local_conversation_view() -> None:
     st.session_state.last_error = ""
     st.session_state.response_time = 0.0
     st.session_state.model = "-"
+    st.session_state.provider = "-"
+    st.session_state.cache_hit = False
+    st.session_state.out_of_scope = False
+    st.session_state.cost_usd = 0.0
     st.session_state.messages = []
 
 
@@ -138,8 +151,13 @@ def build_user_message_content(description: str, filenames: list[str]) -> str:
     return normalized_description
 
 
-def is_ambiguous_estimation(estimation: str) -> bool:
+def is_retryable_estimation(estimation: str, *, out_of_scope: bool = False) -> bool:
+    """True when the user should refine input (out of scope or legacy ambiguous text)."""
+    if out_of_scope:
+        return True
     normalized_estimation = estimation.lower()
+    if normalized_estimation.startswith("out of scope:"):
+        return True
     ambiguity_markers = (
         "demasiado ambiguo",
         "demasiado vaga",
@@ -150,8 +168,35 @@ def is_ambiguous_estimation(estimation: str) -> bool:
     return any(marker in normalized_estimation for marker in ambiguity_markers)
 
 
+def apply_estimation_response(response: EstimationResponse) -> None:
+    st.session_state.last_estimation = response.estimation
+    st.session_state.model = response.model
+    st.session_state.provider = response.provider
+    st.session_state.prompt_version = response.prompt_version
+    st.session_state.cache_hit = response.cache_hit
+    st.session_state.out_of_scope = response.out_of_scope
+    st.session_state.cost_usd = response.cost_usd
+    st.session_state.project_metadata = (
+        response.project_metadata or empty_project_metadata()
+    )
+
+
+def handle_api_failure(exc: Exception, *, api_base_url: str) -> str:
+    if isinstance(exc, httpx.HTTPError):
+        return format_api_error(exc, api_base_url=api_base_url)
+    return f"**Error inesperado**\n\n{exc}"
+
+
 if "model" not in st.session_state:
     st.session_state.model = "-"
+if "provider" not in st.session_state:
+    st.session_state.provider = "-"
+if "cache_hit" not in st.session_state:
+    st.session_state.cache_hit = False
+if "out_of_scope" not in st.session_state:
+    st.session_state.out_of_scope = False
+if "cost_usd" not in st.session_state:
+    st.session_state.cost_usd = 0.0
 if "response_time" not in st.session_state:
     st.session_state.response_time = 0.0
 if "last_estimation" not in st.session_state:
@@ -173,6 +218,11 @@ if "form_version" not in st.session_state:
 if "session_id" not in st.session_state:
     try:
         st.session_state.session_id = create_session()
+    except httpx.HTTPError as exc:
+        st.session_state.session_id = ""
+        st.session_state.last_error = format_api_error(
+            exc, api_base_url=get_api_base_url()
+        )
     except Exception as exc:
         st.session_state.session_id = ""
         st.session_state.last_error = f"No se pudo crear la sesión: {exc}"
@@ -184,6 +234,10 @@ with st.sidebar:
     if st.button("Nueva conversación"):
         try:
             reset_conversation_state()
+        except httpx.HTTPError as exc:
+            st.session_state.last_error = format_api_error(
+                exc, api_base_url=get_api_base_url()
+            )
         except Exception as exc:
             st.session_state.last_error = f"No se pudo crear la nueva sesión: {exc}"
         st.rerun()
@@ -211,7 +265,7 @@ with st.expander(form_title, expanded=not conversation_started):
                 ),
                 height=200,
                 key=f"transcription_{st.session_state.form_version}",
-                value="Una app para hacer tortas de queso"
+                value="Una app para hacer tortas de queso",
             )
             uploaded_files = st.file_uploader(
                 "Archivos",
@@ -357,29 +411,41 @@ if submitted:
         response.raise_for_status()
 
         estimation_response = EstimationResponse.model_validate(response.json())
-        is_ambiguous_response = is_ambiguous_estimation(estimation_response.estimation)
-        st.session_state.last_estimation = estimation_response.estimation
-        st.session_state.model = estimation_response.model
-        st.session_state.prompt_version = estimation_response.prompt_version
-        st.session_state.project_metadata = (
-            estimation_response.project_metadata or empty_project_metadata()
+        apply_estimation_response(estimation_response)
+        needs_retry = is_retryable_estimation(
+            estimation_response.estimation,
+            out_of_scope=estimation_response.out_of_scope,
         )
         st.session_state.messages.append({"role": "user", "content": user_message})
         st.session_state.messages.append(
             {"role": "assistant", "content": estimation_response.estimation}
         )
-        st.session_state.attachments_locked = not is_ambiguous_response
-        if is_ambiguous_response:
-            st.session_state.last_error = (
-                "La estimación no encontró alcance suficiente. Puedes ampliar la "
-                "descripción o adjuntar otro PDF/DOCX."
-            )
+        st.session_state.attachments_locked = not needs_retry
+        if needs_retry:
+            if estimation_response.out_of_scope:
+                st.session_state.last_error = (
+                    "La solicitud quedó **fuera de alcance** para este estimador "
+                    "(solo proyectos de software). Amplía la descripción con requisitos "
+                    "técnicos o cambia el tipo de proyecto."
+                )
+            else:
+                st.session_state.last_error = (
+                    "La estimación no encontró alcance suficiente. Puedes ampliar la "
+                    "descripción o adjuntar otro PDF/DOCX."
+                )
+    except httpx.HTTPError as exc:
+        st.session_state.last_estimation = ""
+        friendly_error = handle_api_failure(exc, api_base_url=get_api_base_url())
+        st.session_state.last_error = friendly_error
+        st.session_state.messages.append(
+            {"role": "assistant", "content": friendly_error}
+        )
     except Exception as exc:
         st.session_state.last_estimation = ""
-        st.session_state.model = "-"
-        st.session_state.last_error = f"Error consumiendo la API: {exc}"
+        friendly_error = handle_api_failure(exc, api_base_url=get_api_base_url())
+        st.session_state.last_error = friendly_error
         st.session_state.messages.append(
-            {"role": "assistant", "content": st.session_state.last_error}
+            {"role": "assistant", "content": friendly_error}
         )
     finally:
         st.session_state.response_time = time.perf_counter() - start_time
@@ -423,32 +489,59 @@ if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
         response.raise_for_status()
 
         estimation_response = EstimationResponse.model_validate(response.json())
-        st.session_state.last_estimation = estimation_response.estimation
-        st.session_state.model = estimation_response.model
-        st.session_state.prompt_version = estimation_response.prompt_version
-        st.session_state.project_metadata = (
-            estimation_response.project_metadata or empty_project_metadata()
-        )
+        apply_estimation_response(estimation_response)
         st.session_state.messages.append(
             {"role": "assistant", "content": estimation_response.estimation}
         )
-        st.session_state.attachments_locked = True
+        st.session_state.attachments_locked = not is_retryable_estimation(
+            estimation_response.estimation,
+            out_of_scope=estimation_response.out_of_scope,
+        )
+    except httpx.HTTPError as exc:
+        st.session_state.last_estimation = ""
+        friendly_error = handle_api_failure(exc, api_base_url=get_api_base_url())
+        st.session_state.last_error = friendly_error
+        st.session_state.messages.append(
+            {"role": "assistant", "content": friendly_error}
+        )
     except Exception as exc:
         st.session_state.last_estimation = ""
-        st.session_state.model = "-"
-        st.session_state.last_error = f"Error consumiendo la API: {exc}"
+        friendly_error = handle_api_failure(exc, api_base_url=get_api_base_url())
+        st.session_state.last_error = friendly_error
         st.session_state.messages.append(
-            {"role": "assistant", "content": st.session_state.last_error}
+            {"role": "assistant", "content": friendly_error}
         )
     finally:
         st.session_state.response_time = time.perf_counter() - start_time
         st.rerun()
 
 with st.sidebar:
+    st.header("Configuración")
     st.text_input("API base URL", value=get_api_base_url(), disabled=True)
     st.text_input("Session ID", value=st.session_state.session_id, disabled=True)
-    st.metric("Model", st.session_state.model)
+    st.divider()
+    st.subheader("Última respuesta")
+    st.metric(
+        "Model",
+        resolve_sidebar_model(response_model=st.session_state.model),
+    )
+    if st.session_state.provider and st.session_state.provider != "-":
+        st.caption(f"Provider: `{st.session_state.provider}`")
     st.metric("Prompt version", st.session_state.prompt_version)
     st.metric("Response time", f"{st.session_state.response_time:.2f}s")
-    with st.expander("project_metadata", expanded=True):
+    if st.session_state.cost_usd:
+        st.metric("Cost (USD)", f"{st.session_state.cost_usd:.4f}")
+    st.metric("Cache hit", "Sí" if st.session_state.cache_hit else "No")
+    if st.session_state.out_of_scope:
+        st.warning("Fuera de alcance (out_of_scope)")
+    st.divider()
+    st.subheader("Modelo configurado (.env)")
+    st.text_input("LLM_PROVIDER", value=env_display("LLM_PROVIDER"), disabled=True)
+    st.text_input("PRIMARY_MODEL", value=env_display("PRIMARY_MODEL"), disabled=True)
+    st.text_input(
+        "FALLBACK_MODEL",
+        value=env_display("FALLBACK_MODEL", "(sin fallback)"),
+        disabled=True,
+    )
+    with st.expander("project_metadata", expanded=False):
         st.json(st.session_state.project_metadata)
