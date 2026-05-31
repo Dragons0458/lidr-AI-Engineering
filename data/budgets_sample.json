@@ -1,0 +1,422 @@
+[
+  {
+    "budget_id": "S07-FIN-001",
+    "client_metadata": {"name": "AndesPay", "sector": "finance", "country": "Colombia"},
+    "project_summary": "Digital wallet for SME payments with onboarding, compliance review, and card funding flows.",
+    "main_technology": "Python FastAPI",
+    "year": 2024,
+    "total_estimated_hours": 280,
+    "components": [
+      {
+        "component_id": "auth-api",
+        "name": "OAuth and JWT authentication service",
+        "description": "Build a secure authentication backend for wallet users and operations staff. The service issues short-lived JWTs, supports refresh tokens, and integrates OAuth providers for business identity verification.",
+        "tech_stack": ["FastAPI", "PostgreSQL", "OAuth2", "JWT"],
+        "estimated_hours": 120,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "payment-ledger",
+        "name": "Wallet transaction ledger",
+        "description": "Create double-entry ledger tables and APIs for deposits, card funding, and peer transfers. The component validates idempotency keys and records immutable accounting movements.",
+        "tech_stack": ["Python", "PostgreSQL", "SQLAlchemy"],
+        "estimated_hours": 160,
+        "complexity": "high",
+        "dependencies": ["auth-api"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-FIN-002",
+    "client_metadata": {"name": "NovaBank", "sector": "finance", "country": "Chile"},
+    "project_summary": "Loan origination portal for retail banking with document capture, risk scoring, and advisor dashboards.",
+    "main_technology": "Java Spring Boot",
+    "year": 2023,
+    "total_estimated_hours": 260,
+    "components": [
+      {
+        "component_id": "risk-rules",
+        "name": "Credit risk rule engine",
+        "description": "Configure deterministic scoring rules for income bands, debt ratios, and employment history. The module produces explainable decisions for bank advisors and stores rule execution traces.",
+        "tech_stack": ["Spring Boot", "Drools", "PostgreSQL"],
+        "estimated_hours": 145,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "advisor-dashboard",
+        "name": "Advisor review dashboard",
+        "description": "Deliver a dashboard where advisors review applications, request missing documents, and override rule outcomes with mandatory justification. Queues are prioritized by SLA and risk score.",
+        "tech_stack": ["React", "TypeScript", "Spring Boot"],
+        "estimated_hours": 115,
+        "complexity": "medium",
+        "dependencies": ["risk-rules"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-FIN-003",
+    "client_metadata": {"name": "LedgerPoint", "sector": "finance", "country": "Mexico"},
+    "project_summary": "Treasury reconciliation platform for matching bank statements against ERP invoices and payouts.",
+    "main_technology": "Node.js",
+    "year": 2025,
+    "total_estimated_hours": 245,
+    "components": [
+      {
+        "component_id": "statement-importer",
+        "name": "Bank statement importer",
+        "description": "Ingest daily bank files in CSV and MT940 formats. The importer normalizes currency, reference fields, and posting dates before storing transactions for reconciliation.",
+        "tech_stack": ["Node.js", "TypeScript", "PostgreSQL"],
+        "estimated_hours": 95,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "matching-engine",
+        "name": "Invoice matching engine",
+        "description": "Match incoming statement lines with open invoices and payout records using deterministic rules plus confidence scoring. Finance teams can review uncertain matches and approve corrections.",
+        "tech_stack": ["Node.js", "PostgreSQL", "Redis"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": ["statement-importer"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-ECO-001",
+    "client_metadata": {"name": "MercadoNorte", "sector": "ecommerce", "country": "Argentina"},
+    "project_summary": "Marketplace modernization for catalog search, promotions, checkout, and seller inventory synchronization.",
+    "main_technology": "Next.js",
+    "year": 2024,
+    "total_estimated_hours": 290,
+    "components": [
+      {
+        "component_id": "catalog-search",
+        "name": "Product catalog search",
+        "description": "Build a searchable product catalog with filters for brand, category, availability, and price. The feature synchronizes seller updates and exposes fast query responses for storefront pages.",
+        "tech_stack": ["Next.js", "Elasticsearch", "Node.js"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "checkout-ui",
+        "name": "Responsive checkout",
+        "description": "Create a multi-step checkout experience optimized for mobile buyers. The flow includes shipping options, payment selection, order review, and abandoned cart resilience.",
+        "tech_stack": ["Next.js", "React", "Stripe"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": ["catalog-search"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-ECO-002",
+    "client_metadata": {"name": "CasaVerde", "sector": "ecommerce", "country": "Peru"},
+    "project_summary": "Direct-to-consumer store for sustainable home goods with subscriptions and warehouse integration.",
+    "main_technology": "Shopify Hydrogen",
+    "year": 2025,
+    "total_estimated_hours": 210,
+    "components": [
+      {
+        "component_id": "subscription-plans",
+        "name": "Subscription plan management",
+        "description": "Let customers subscribe to recurring home goods bundles and modify delivery cadence. The backend handles plan changes, billing retries, and paused subscriptions.",
+        "tech_stack": ["Shopify Hydrogen", "GraphQL", "Stripe"],
+        "estimated_hours": 115,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "warehouse-sync",
+        "name": "Warehouse stock sync",
+        "description": "Synchronize inventory levels between the storefront and the third-party warehouse system. The integration processes stock reservations, shipping confirmations, and backorder updates.",
+        "tech_stack": ["Node.js", "REST", "Webhooks"],
+        "estimated_hours": 95,
+        "complexity": "medium",
+        "dependencies": []
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-ECO-003",
+    "client_metadata": {"name": "BiciExpress", "sector": "ecommerce", "country": "Colombia"},
+    "project_summary": "Online store for cycling equipment with same-day delivery scheduling and returns management.",
+    "main_technology": "Django",
+    "year": 2023,
+    "total_estimated_hours": 215,
+    "components": [
+      {
+        "component_id": "delivery-scheduler",
+        "name": "Same-day delivery scheduler",
+        "description": "Provide delivery windows based on courier capacity, buyer location, and warehouse cutoff times. The scheduler avoids overbooking and updates the order timeline in real time.",
+        "tech_stack": ["Django", "Celery", "Redis"],
+        "estimated_hours": 125,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "returns-portal",
+        "name": "Returns self-service portal",
+        "description": "Allow customers to request returns, select pickup times, and print labels. Support agents can inspect return reasons and approve exceptions from the admin panel.",
+        "tech_stack": ["Django", "PostgreSQL", "HTMX"],
+        "estimated_hours": 90,
+        "complexity": "medium",
+        "dependencies": []
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-ECO-004",
+    "client_metadata": {"name": "ModaVista", "sector": "ecommerce", "country": "Spain"},
+    "project_summary": "Fashion retail platform with personalized recommendations and seasonal campaign landing pages.",
+    "main_technology": "React",
+    "year": 2024,
+    "total_estimated_hours": 245,
+    "components": [
+      {
+        "component_id": "recommendations",
+        "name": "Personalized recommendations",
+        "description": "Recommend products based on browsing behavior, purchase history, and campaign priorities. The service exposes recommendation slots for home, product detail, and cart pages.",
+        "tech_stack": ["Python", "FastAPI", "Redis"],
+        "estimated_hours": 135,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "campaign-builder",
+        "name": "Campaign landing page builder",
+        "description": "Give marketing teams reusable sections for seasonal landing pages. Editors compose product grids, editorial banners, and call-to-action blocks without code changes.",
+        "tech_stack": ["React", "TypeScript", "CMS"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": []
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-HLT-001",
+    "client_metadata": {"name": "Clinica Aurora", "sector": "healthcare", "country": "Colombia"},
+    "project_summary": "Patient portal for appointments, lab results, consent forms, and secure messaging with care teams.",
+    "main_technology": "Ruby on Rails",
+    "year": 2025,
+    "total_estimated_hours": 255,
+    "components": [
+      {
+        "component_id": "appointment-booking",
+        "name": "Appointment booking",
+        "description": "Allow patients to search providers, select time slots, and reschedule appointments with clinic policy constraints. The module syncs availability with the internal scheduling system.",
+        "tech_stack": ["Ruby on Rails", "PostgreSQL", "REST"],
+        "estimated_hours": 120,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "secure-messaging",
+        "name": "Secure patient messaging",
+        "description": "Enable encrypted messages between patients and assigned care teams. The feature includes triage labels, response SLAs, and notification preferences.",
+        "tech_stack": ["Ruby on Rails", "ActionCable", "PostgreSQL"],
+        "estimated_hours": 135,
+        "complexity": "high",
+        "dependencies": ["appointment-booking"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-HLT-002",
+    "client_metadata": {"name": "MediTrack", "sector": "healthcare", "country": "Mexico"},
+    "project_summary": "Remote patient monitoring dashboard for chronic care programs and connected medical devices.",
+    "main_technology": "Python FastAPI",
+    "year": 2024,
+    "total_estimated_hours": 290,
+    "components": [
+      {
+        "component_id": "device-ingestion",
+        "name": "Medical device ingestion",
+        "description": "Receive readings from Bluetooth gateways and vendor APIs for blood pressure, glucose, and pulse oximetry devices. The service validates units, timestamps, and patient-device assignments.",
+        "tech_stack": ["FastAPI", "Kafka", "PostgreSQL"],
+        "estimated_hours": 150,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "clinical-alerts",
+        "name": "Clinical alert rules",
+        "description": "Generate alerts when readings exceed personalized thresholds or when devices stop reporting. Nurses can acknowledge alerts, add notes, and escalate cases to physicians.",
+        "tech_stack": ["Python", "Celery", "Redis"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["device-ingestion"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-HLT-003",
+    "client_metadata": {"name": "SaludData", "sector": "healthcare", "country": "Chile"},
+    "project_summary": "Analytics warehouse for hospital operations, bed occupancy, staffing, and discharge predictions.",
+    "main_technology": "dbt",
+    "year": 2023,
+    "total_estimated_hours": 235,
+    "components": [
+      {
+        "component_id": "etl-pipeline",
+        "name": "Hospital ETL pipeline",
+        "description": "Extract operational data from admission, discharge, and staffing systems. The pipeline standardizes facility codes, timestamps, and patient encounter identifiers.",
+        "tech_stack": ["Airflow", "dbt", "PostgreSQL"],
+        "estimated_hours": 125,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "operations-bi",
+        "name": "Operations BI dashboards",
+        "description": "Build dashboards for executives and hospital managers. Visualizations summarize occupancy pressure, discharge delays, staffing gaps, and weekly operational KPIs.",
+        "tech_stack": ["Looker", "BigQuery", "dbt"],
+        "estimated_hours": 110,
+        "complexity": "medium",
+        "dependencies": ["etl-pipeline"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-HLT-004",
+    "client_metadata": {"name": "Farmacia Uno", "sector": "healthcare", "country": "Peru"},
+    "project_summary": "Pharmacy fulfillment system for prescriptions, insurance validation, inventory, and delivery dispatch.",
+    "main_technology": "C# .NET",
+    "year": 2024,
+    "total_estimated_hours": 250,
+    "components": [
+      {
+        "component_id": "prescription-intake",
+        "name": "Prescription intake",
+        "description": "Capture prescriptions from partner clinics and customer uploads. Pharmacists validate dosage, medication availability, and prescription authenticity before fulfillment.",
+        "tech_stack": [".NET", "SQL Server", "Azure Blob Storage"],
+        "estimated_hours": 120,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "insurance-check",
+        "name": "Insurance eligibility check",
+        "description": "Integrate with insurer APIs to verify coverage, copay amounts, and prior authorization requirements. Failed checks are routed to a manual resolution queue.",
+        "tech_stack": [".NET", "REST", "SQL Server"],
+        "estimated_hours": 130,
+        "complexity": "high",
+        "dependencies": ["prescription-intake"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-IND-001",
+    "client_metadata": {"name": "AndesSteel", "sector": "industrial", "country": "Colombia"},
+    "project_summary": "Manufacturing execution dashboard for production lines, machine telemetry, downtime analysis, and maintenance planning.",
+    "main_technology": "Go",
+    "year": 2025,
+    "total_estimated_hours": 275,
+    "components": [
+      {
+        "component_id": "telemetry-gateway",
+        "name": "Machine telemetry gateway",
+        "description": "Collect sensor readings from PLCs and normalize machine status events. The gateway buffers readings during connectivity gaps and publishes clean telemetry to the platform.",
+        "tech_stack": ["Go", "MQTT", "TimescaleDB"],
+        "estimated_hours": 145,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "maintenance-planner",
+        "name": "Maintenance planner",
+        "description": "Schedule preventive maintenance based on operating hours and alert history. The planner coordinates technician assignments, spare parts, and production blackout windows.",
+        "tech_stack": ["React", "Go", "PostgreSQL"],
+        "estimated_hours": 130,
+        "complexity": "medium",
+        "dependencies": ["telemetry-gateway"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-IND-002",
+    "client_metadata": {"name": "PortLogix", "sector": "industrial", "country": "Panama"},
+    "project_summary": "Port logistics control tower for container tracking, berth planning, customs milestones, and truck appointments.",
+    "main_technology": "Java Spring Boot",
+    "year": 2024,
+    "total_estimated_hours": 275,
+    "components": [
+      {
+        "component_id": "container-tracking",
+        "name": "Container tracking API",
+        "description": "Track container status from vessel arrival through gate-out events. The API merges terminal updates, customs milestones, and carrier references into a single timeline.",
+        "tech_stack": ["Spring Boot", "Kafka", "PostgreSQL"],
+        "estimated_hours": 135,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "berth-planning",
+        "name": "Berth planning board",
+        "description": "Create an operational board for berth assignments, vessel ETAs, and crane capacity. Planners can simulate schedule changes before publishing updates.",
+        "tech_stack": ["React", "Spring Boot", "WebSocket"],
+        "estimated_hours": 140,
+        "complexity": "high",
+        "dependencies": ["container-tracking"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-IND-003",
+    "client_metadata": {"name": "AgroSense", "sector": "industrial", "country": "Argentina"},
+    "project_summary": "IoT platform for agricultural equipment monitoring, field alerts, and fleet utilization reporting.",
+    "main_technology": "Python",
+    "year": 2023,
+    "total_estimated_hours": 225,
+    "components": [
+      {
+        "component_id": "iot-device-registry",
+        "name": "IoT device registry",
+        "description": "Register tractors, sensors, and gateway devices with ownership and calibration metadata. The registry supports secure provisioning and field replacement workflows.",
+        "tech_stack": ["Python", "FastAPI", "PostgreSQL"],
+        "estimated_hours": 95,
+        "complexity": "medium",
+        "dependencies": []
+      },
+      {
+        "component_id": "field-alerts",
+        "name": "Field alert processing",
+        "description": "Process incoming moisture, temperature, and equipment fault readings. Alerts are routed to field managers with severity, location, and recommended action.",
+        "tech_stack": ["Python", "MQTT", "Celery"],
+        "estimated_hours": 130,
+        "complexity": "high",
+        "dependencies": ["iot-device-registry"]
+      }
+    ]
+  },
+  {
+    "budget_id": "S07-IND-004",
+    "client_metadata": {"name": "EnergiaSur", "sector": "industrial", "country": "Chile"},
+    "project_summary": "Energy operations platform for wind farm monitoring, incident management, and regulatory reporting.",
+    "main_technology": "Kotlin",
+    "year": 2025,
+    "total_estimated_hours": 250,
+    "components": [
+      {
+        "component_id": "scada-adapter",
+        "name": "SCADA data adapter",
+        "description": "Integrate turbine telemetry from the SCADA system and transform vendor-specific tags into a common data model. The adapter flags missing readings and stores quality indicators.",
+        "tech_stack": ["Kotlin", "Kafka", "TimescaleDB"],
+        "estimated_hours": 135,
+        "complexity": "high",
+        "dependencies": []
+      },
+      {
+        "component_id": "regulatory-reporting",
+        "name": "Regulatory reporting exports",
+        "description": "Produce monthly availability, generation, and incident reports required by regulators. Reports include validation summaries and signed export archives.",
+        "tech_stack": ["Kotlin", "PostgreSQL", "S3"],
+        "estimated_hours": 115,
+        "complexity": "medium",
+        "dependencies": ["scada-adapter"]
+      }
+    ]
+  }
+]
