@@ -9,6 +9,7 @@ import streamlit as st
 from dotenv import load_dotenv
 from streamlit.errors import StreamlitSecretNotFoundError
 
+from app.schemas.acb import ACBResponse
 from app.schemas.estimation import (
     DetailLevel,
     EstimationResponse,
@@ -16,7 +17,14 @@ from app.schemas.estimation import (
     ProjectType,
     ReferenceProject,
 )
-from streamlit_common import env_display, format_api_error, resolve_sidebar_model
+from streamlit_common import (
+    env_display,
+    format_api_error,
+    render_structured_phases,
+    resolve_sidebar_model,
+)
+
+TIER_OPTIONS = ["auto", "executive", "pm", "developer", "default"]
 
 load_dotenv(Path(__file__).resolve().parent / ".env")
 
@@ -53,6 +61,20 @@ def build_sessions_url() -> str:
 
 def build_session_estimate_url(session_id: str) -> str:
     return f"{build_sessions_url()}/{session_id}/estimate"
+
+
+def build_session_estimate_acb_url(session_id: str) -> str:
+    return f"{build_sessions_url()}/{session_id}/estimate-acb"
+
+
+def build_session_debug_url(session_id: str) -> str:
+    return f"{build_sessions_url()}/{session_id}"
+
+
+def fetch_session_debug(session_id: str) -> dict[str, object]:
+    response = httpx.get(build_session_debug_url(session_id), timeout=10.0)
+    response.raise_for_status()
+    return response.json()
 
 
 def _table_rows_to_dicts(raw_rows: object) -> list[dict[str, object]]:
@@ -125,6 +147,9 @@ def reset_conversation_state() -> None:
     st.session_state.messages = []
     st.session_state.attachments_locked = False
     st.session_state.reference_projects_rows = []
+    st.session_state.use_acb = False
+    st.session_state.last_acb_trace = None
+    st.session_state.session_debug = {}
     st.session_state.form_version += 1
 
 
@@ -166,6 +191,31 @@ def is_retryable_estimation(estimation: str, *, out_of_scope: bool = False) -> b
         "no se puede generar una estimación",
     )
     return any(marker in normalized_estimation for marker in ambiguity_markers)
+
+
+def apply_acb_response(response: ACBResponse) -> None:
+    st.session_state.last_estimation = response.result.summary
+    st.session_state.model = response.model
+    st.session_state.provider = response.provider
+    st.session_state.prompt_version = response.prompt_version
+    st.session_state.cache_hit = response.cache_hit
+    st.session_state.out_of_scope = response.result.summary.startswith("Out of scope:")
+    st.session_state.cost_usd = response.cost_usd
+    st.session_state.project_metadata = (
+        response.project_metadata or empty_project_metadata()
+    )
+    st.session_state.last_acb_trace = response.acb.model_dump()
+    st.session_state.last_structured_result = response.result.model_dump()
+
+
+def refresh_session_debug() -> None:
+    session_id = st.session_state.get("session_id")
+    if not session_id:
+        return
+    try:
+        st.session_state.session_debug = fetch_session_debug(session_id)
+    except httpx.HTTPError:
+        st.session_state.session_debug = {}
 
 
 def apply_estimation_response(response: EstimationResponse) -> None:
@@ -215,6 +265,16 @@ if "attachments_locked" not in st.session_state:
     st.session_state.attachments_locked = False
 if "form_version" not in st.session_state:
     st.session_state.form_version = 0
+if "use_acb" not in st.session_state:
+    st.session_state.use_acb = False
+if "last_acb_trace" not in st.session_state:
+    st.session_state.last_acb_trace = None
+if "last_structured_result" not in st.session_state:
+    st.session_state.last_structured_result = None
+if "session_debug" not in st.session_state:
+    st.session_state.session_debug = {}
+if "tier_choice" not in st.session_state:
+    st.session_state.tier_choice = "auto"
 if "session_id" not in st.session_state:
     try:
         st.session_state.session_id = create_session()
@@ -273,10 +333,21 @@ with st.expander(form_title, expanded=not conversation_started):
                 accept_multiple_files=True,
                 key=f"uploaded_files_{st.session_state.form_version}",
             )
+        use_acb = st.checkbox(
+            "Usar Actor-Critic-Boss (estructurado)",
+            value=st.session_state.use_acb,
+            help="Llama a POST .../estimate-acb (salida estructurada + traza).",
+        )
+        tier_choice = st.selectbox(
+            "Audiencia (tier)",
+            options=TIER_OPTIONS,
+            index=TIER_OPTIONS.index(st.session_state.tier_choice),
+            help="auto deja que el servidor resuelva cuando TIER_RESOLUTION_ENABLED=true.",
+        )
         prompt_version = st.selectbox(
             "Versión de prompt",
-            options=["v1", "v2"],
-            index=["v1", "v2"].index(st.session_state.prompt_version),
+            options=["v1", "v2"] if not use_acb else ["v3"],
+            index=0 if use_acb else ["v1", "v2"].index(st.session_state.prompt_version),
         )
         project_type = st.selectbox(
             "Tipo de proyecto",
@@ -341,6 +412,8 @@ with st.expander(form_title, expanded=not conversation_started):
         )
 
 st.session_state.prompt_version = prompt_version
+st.session_state.use_acb = use_acb
+st.session_state.tier_choice = tier_choice
 
 if submitted:
     start_time = time.perf_counter()
@@ -400,9 +473,16 @@ if submitted:
                     for reference_project in reference_projects
                 ]
             )
+        if tier_choice != "auto":
+            data["tier"] = tier_choice
 
+        estimate_url = (
+            build_session_estimate_acb_url(st.session_state.session_id)
+            if use_acb
+            else build_session_estimate_url(st.session_state.session_id)
+        )
         response = httpx.post(
-            build_session_estimate_url(st.session_state.session_id),
+            estimate_url,
             data=data,
             files=files,
             params={"prompt_version": prompt_version},
@@ -410,19 +490,30 @@ if submitted:
         )
         response.raise_for_status()
 
-        estimation_response = EstimationResponse.model_validate(response.json())
-        apply_estimation_response(estimation_response)
-        needs_retry = is_retryable_estimation(
-            estimation_response.estimation,
-            out_of_scope=estimation_response.out_of_scope,
-        )
+        if use_acb:
+            acb_response = ACBResponse.model_validate(response.json())
+            apply_acb_response(acb_response)
+            assistant_text = acb_response.result.summary
+            needs_retry = is_retryable_estimation(
+                assistant_text,
+                out_of_scope=st.session_state.out_of_scope,
+            )
+        else:
+            estimation_response = EstimationResponse.model_validate(response.json())
+            apply_estimation_response(estimation_response)
+            assistant_text = estimation_response.estimation
+            needs_retry = is_retryable_estimation(
+                assistant_text,
+                out_of_scope=estimation_response.out_of_scope,
+            )
+        refresh_session_debug()
         st.session_state.messages.append({"role": "user", "content": user_message})
         st.session_state.messages.append(
-            {"role": "assistant", "content": estimation_response.estimation}
+            {"role": "assistant", "content": assistant_text}
         )
         st.session_state.attachments_locked = not needs_retry
         if needs_retry:
-            if estimation_response.out_of_scope:
+            if st.session_state.out_of_scope:
                 st.session_state.last_error = (
                     "La solicitud quedó **fuera de alcance** para este estimador "
                     "(solo proyectos de software). Amplía la descripción con requisitos "
@@ -479,8 +570,15 @@ if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
             "detail_level": detail_level.value,
             "output_format": output_format.value,
         }
+        if st.session_state.tier_choice != "auto":
+            data["tier"] = st.session_state.tier_choice
+        estimate_url = (
+            build_session_estimate_acb_url(st.session_state.session_id)
+            if st.session_state.use_acb
+            else build_session_estimate_url(st.session_state.session_id)
+        )
         response = httpx.post(
-            build_session_estimate_url(st.session_state.session_id),
+            estimate_url,
             data=data,
             files=[],
             params={"prompt_version": st.session_state.prompt_version},
@@ -488,14 +586,23 @@ if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
         )
         response.raise_for_status()
 
-        estimation_response = EstimationResponse.model_validate(response.json())
-        apply_estimation_response(estimation_response)
+        if st.session_state.use_acb:
+            acb_response = ACBResponse.model_validate(response.json())
+            apply_acb_response(acb_response)
+            assistant_text = acb_response.result.summary
+            out_of_scope = st.session_state.out_of_scope
+        else:
+            estimation_response = EstimationResponse.model_validate(response.json())
+            apply_estimation_response(estimation_response)
+            assistant_text = estimation_response.estimation
+            out_of_scope = estimation_response.out_of_scope
+        refresh_session_debug()
         st.session_state.messages.append(
-            {"role": "assistant", "content": estimation_response.estimation}
+            {"role": "assistant", "content": assistant_text}
         )
         st.session_state.attachments_locked = not is_retryable_estimation(
-            estimation_response.estimation,
-            out_of_scope=estimation_response.out_of_scope,
+            assistant_text,
+            out_of_scope=out_of_scope,
         )
     except httpx.HTTPError as exc:
         st.session_state.last_estimation = ""
@@ -543,5 +650,31 @@ with st.sidebar:
         value=env_display("FALLBACK_MODEL", "(sin fallback)"),
         disabled=True,
     )
+    debug = st.session_state.session_debug or {}
+    if debug:
+        st.metric("Anclas", debug.get("anchors_count", 0))
+        st.metric("Resumen (chars)", debug.get("summary_chars", 0))
+        if debug.get("last_resolved_tier"):
+            st.caption(
+                f"Tier: `{debug.get('last_resolved_tier')}` "
+                f"({debug.get('last_tier_rule')})"
+            )
+    if st.session_state.last_structured_result:
+        with st.expander("Estimación estructurada (ACB)", expanded=True):
+            render_structured_phases(st.session_state.last_structured_result)
+    if st.session_state.last_acb_trace:
+        with st.expander("Traza ACB", expanded=False):
+            st.json(st.session_state.last_acb_trace)
     with st.expander("project_metadata", expanded=False):
         st.json(st.session_state.project_metadata)
+    with st.expander("Sesión 5 (.env)", expanded=False):
+        st.text_input(
+            "TIER_RESOLUTION_ENABLED",
+            value=env_display("TIER_RESOLUTION_ENABLED", "false"),
+            disabled=True,
+        )
+        st.text_input(
+            "MEMORY_COMPRESSION_ENABLED",
+            value=env_display("MEMORY_COMPRESSION_ENABLED", "false"),
+            disabled=True,
+        )

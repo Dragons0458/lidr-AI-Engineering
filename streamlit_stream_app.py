@@ -90,6 +90,12 @@ with st.sidebar:
         disabled=True,
     )
     st.divider()
+    st.subheader("Sesión 5 (.env)")
+    st.caption(
+        "El streaming usa `POST /estimate/stream` (markdown). "
+        "Para ACB estructurado usa `streamlit_app.py` con sesiones."
+    )
+    st.divider()
     st.subheader("Caché (.env)")
     st.text_input("REDIS_URL", value=env_display("REDIS_URL"), disabled=True)
     st.text_input("CACHE_TTL", value=env_display("CACHE_TTL", "86400"), disabled=True)

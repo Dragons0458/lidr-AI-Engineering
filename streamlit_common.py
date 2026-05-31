@@ -94,6 +94,35 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
     )
 
 
+def render_structured_phases(result: dict[str, Any]) -> None:
+    """Render EstimationResult phases as a Streamlit table."""
+    import streamlit as st
+
+    phases = result.get("phases") or []
+    if not phases:
+        return
+    st.markdown(f"**{result.get('summary', '')}**")
+    st.caption(
+        f"Confianza: {result.get('confidence_pct')}% · "
+        f"Total: {result.get('total_hours')} h · "
+        f"Coste: {result.get('total_cost_eur')} EUR"
+    )
+    st.dataframe(
+        [
+            {
+                "Fase": phase.get("name"),
+                "Base (h)": phase.get("base_hours"),
+                "Buffer (h)": phase.get("buffer_hours"),
+                "Equipo": phase.get("team"),
+                "Resumen": phase.get("summary"),
+            }
+            for phase in phases
+        ],
+        use_container_width=True,
+        hide_index=True,
+    )
+
+
 def resolve_sidebar_model(*, response_model: str | None = None) -> str:
     """Model shown in sidebar: last API response, else PRIMARY_MODEL from env."""
     if response_model and response_model.strip() and response_model != "-":
