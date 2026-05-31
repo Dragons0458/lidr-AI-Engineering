@@ -1,69 +1,45 @@
 from datetime import datetime
-from typing import Union
 
-from litellm.litellm_core_utils.streaming_handler import CustomStreamWrapper
-from litellm.types.utils import ModelResponse
-
-from app.config import get_settings
 from app.schemas.estimation import EstimationResponse, TokenUsage
 from app.services.calc_service import calculate_cost
 from app.services.estimation_service import EstimationGenerationResult
 
-settings = get_settings()
-
 
 def format_response(
-    response: Union[EstimationGenerationResult, ModelResponse, CustomStreamWrapper],
+    response: EstimationGenerationResult,
     prompt_version: str = "v1",
 ) -> EstimationResponse:
-    """Format the LLM response into an EstimationResponse object."""
-    generation_result = (
-        response if isinstance(response, EstimationGenerationResult) else None
-    )
-    model_response = generation_result.response if generation_result else response
-    model = generation_result.model if generation_result else settings.LLM_MODEL
-    main_input_tokens = (
-        generation_result.input_tokens
-        if generation_result and generation_result.input_tokens is not None
-        else model_response.usage.prompt_tokens
-    )
-    main_output_tokens = (
-        generation_result.output_tokens
-        if generation_result and generation_result.output_tokens is not None
-        else model_response.usage.completion_tokens
-    )
-    prep_in = generation_result.preprocessing_input_tokens if generation_result else 0
-    prep_out = generation_result.preprocessing_output_tokens if generation_result else 0
-    finish_reason = (
-        generation_result.finish_reason
-        if generation_result
-        else getattr(model_response.choices[0], "finish_reason", None)
-    )
+    """Format the LLM generation result into an EstimationResponse."""
+    main_input_tokens = response.input_tokens or 0
+    main_output_tokens = response.output_tokens or 0
+    prep_in = response.preprocessing_input_tokens
+    prep_out = response.preprocessing_output_tokens
 
     cost = calculate_cost(
-        model,
+        response.model,
         main_input_tokens + prep_in,
         main_output_tokens + prep_out,
     )
+    cost_usd = response.cost_usd or (float(cost["total"]) if cost else 0.0)
 
     return EstimationResponse(
-        estimation=model_response.choices[0].message.content or "",
+        estimation=response.estimation,
         timestamp=datetime.now(),
-        model=model,
-        provider=settings.LLM_PROVIDER,
+        model=response.model,
+        provider=response.provider,
         prompt_version=prompt_version,
         usage=TokenUsage(
-            cost_estimate=cost.get("total") if cost else None,
+            cost_estimate=cost.get("total") if cost else cost_usd,
             tokens_used=main_input_tokens + main_output_tokens + prep_in + prep_out,
             input_tokens=main_input_tokens,
             output_tokens=main_output_tokens,
             preprocessing_input_tokens=prep_in,
             preprocessing_output_tokens=prep_out,
         ),
-        latency_ms=generation_result.latency_ms if generation_result else 0,
-        finish_reason=finish_reason,
-        preprocessing=generation_result.preprocessing if generation_result else "none",
-        extracted_requirements=(
-            generation_result.extracted_requirements if generation_result else None
-        ),
+        latency_ms=response.latency_ms,
+        finish_reason=response.finish_reason,
+        preprocessing=response.preprocessing,
+        extracted_requirements=response.extracted_requirements,
+        cache_hit=response.cache_hit,
+        cost_usd=cost_usd,
     )

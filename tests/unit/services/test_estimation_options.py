@@ -21,11 +21,13 @@ def _request(**overrides) -> EstimationRequest:
     return EstimationRequest(**values)
 
 
-def _fake_response(content: str, input_tokens: int, output_tokens: int):
+def _fake_llm_response(content: str, input_tokens: int, output_tokens: int, model: str):
     return SimpleNamespace(
+        model=model,
         usage=SimpleNamespace(
             prompt_tokens=input_tokens,
             completion_tokens=output_tokens,
+            total_tokens=input_tokens + output_tokens,
         ),
         choices=[
             SimpleNamespace(
@@ -41,15 +43,15 @@ def test_two_phase_preprocessing_makes_two_calls_and_accumulates_usage(
 ) -> None:
     calls = []
 
-    def fake_call_completion(**kwargs):
+    def fake_completion(**kwargs):
         calls.append(kwargs)
         if len(calls) == 1:
-            return _fake_response("Requisitos extraidos", 5, 7)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 11, 13)
+            return _fake_llm_response("Requisitos extraidos", 5, 7, "test-model")
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h", 11, 13, "test-model"
+        )
 
-    monkeypatch.setattr(
-        "app.services.estimation_service._call_completion", fake_call_completion
-    )
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
     result = generate_estimation(
         _request(preprocessing="two_phase", model="test-model", max_tokens=3000)
@@ -78,13 +80,13 @@ def test_two_phase_preprocessing_makes_two_calls_and_accumulates_usage(
 def test_model_override_and_max_tokens_are_passed(monkeypatch) -> None:
     captured = {}
 
-    def fake_call_completion(**kwargs):
+    def fake_completion(**kwargs):
         captured.update(kwargs)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 10, 12)
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h", 10, 12, "custom/model"
+        )
 
-    monkeypatch.setattr(
-        "app.services.estimation_service._call_completion", fake_call_completion
-    )
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
     generate_estimation(_request(model="custom/model", max_tokens=2048))
 
@@ -95,13 +97,13 @@ def test_model_override_and_max_tokens_are_passed(monkeypatch) -> None:
 def test_use_examples_false_omits_examples_block(monkeypatch) -> None:
     captured = {}
 
-    def fake_call_completion(**kwargs):
+    def fake_completion(**kwargs):
         captured.update(kwargs)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 10, 12)
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h", 10, 12, "gpt-4o-mini"
+        )
 
-    monkeypatch.setattr(
-        "app.services.estimation_service._call_completion", fake_call_completion
-    )
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
     generate_estimation(_request(use_examples=False))
 
@@ -112,13 +114,13 @@ def test_use_examples_false_omits_examples_block(monkeypatch) -> None:
 def test_inline_cleaning_injects_block_without_second_call(monkeypatch) -> None:
     calls = []
 
-    def fake_call_completion(**kwargs):
+    def fake_completion(**kwargs):
         calls.append(kwargs)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 10, 12)
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h", 10, 12, "gpt-4o-mini"
+        )
 
-    monkeypatch.setattr(
-        "app.services.estimation_service._call_completion", fake_call_completion
-    )
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
     result = generate_estimation(_request(preprocessing="inline_cleaning"))
 
@@ -130,18 +132,26 @@ def test_inline_cleaning_injects_block_without_second_call(monkeypatch) -> None:
 
 
 def test_thinking_budget_passes_thinking_kwargs_for_anthropic(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.estimation_service.settings.LLM_PROVIDER", "anthropic"
-    )
     captured = {}
 
     def fake_completion(**kwargs):
         captured.update(kwargs)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 10, 12)
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h",
+            10,
+            12,
+            "claude-haiku-4-5-20251001",
+        )
 
-    monkeypatch.setattr("app.services.estimation_service.completion", fake_completion)
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
-    generate_estimation(_request(thinking_budget=2000, max_tokens=1000))
+    generate_estimation(
+        _request(
+            thinking_budget=2000,
+            max_tokens=1000,
+            model="claude-haiku-4-5-20251001",
+        )
+    )
 
     assert captured["thinking"] == {"type": "enabled", "budget_tokens": 2000}
     assert captured["max_tokens"] == 2000 + 1024
@@ -149,24 +159,25 @@ def test_thinking_budget_passes_thinking_kwargs_for_anthropic(monkeypatch) -> No
 
 
 def test_thinking_budget_ignored_with_warning_for_openai(monkeypatch) -> None:
-    monkeypatch.setattr(
-        "app.services.estimation_service.settings.LLM_PROVIDER", "openai"
-    )
     warned: list[str] = []
 
     def fake_warning(event: str, **kwargs) -> None:
         warned.append(event)
 
-    monkeypatch.setattr("app.services.estimation_service.log.warning", fake_warning)
+    monkeypatch.setattr("app.services.llm_wrapper.log.warning", fake_warning)
     captured = {}
 
     def fake_completion(**kwargs):
         captured.update(kwargs)
-        return _fake_response("## Estimacion\nTotal estimated hours: 20h", 10, 12)
+        return _fake_llm_response(
+            "## Estimacion\nTotal estimated hours: 20h", 10, 12, "gpt-4o-mini"
+        )
 
-    monkeypatch.setattr("app.services.estimation_service.completion", fake_completion)
+    monkeypatch.setattr("app.services.llm_wrapper.completion", fake_completion)
 
-    generate_estimation(_request(thinking_budget=2000))
+    generate_estimation(
+        _request(thinking_budget=2000, model="gpt-4o-mini"),
+    )
 
     assert warned == ["thinking_budget_ignored_for_provider"]
     assert "thinking" not in captured

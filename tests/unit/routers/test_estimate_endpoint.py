@@ -1,20 +1,6 @@
-from types import SimpleNamespace
-
 from app.services.estimation_service import EstimationGenerationResult
 
 API_PREFIX = "/api/v1"
-
-
-def _fake_llm_response(content: str):
-    return SimpleNamespace(
-        usage=SimpleNamespace(prompt_tokens=10, completion_tokens=12),
-        choices=[
-            SimpleNamespace(
-                finish_reason="stop",
-                message=SimpleNamespace(content=content),
-            )
-        ],
-    )
 
 
 def test_estimate_endpoint_returns_validation_latency_and_finish_reason(
@@ -35,8 +21,9 @@ Duracion estimada: 4 semanas
 
     def fake_generate_estimation(request, prompt_version="v1"):
         return EstimationGenerationResult(
-            response=_fake_llm_response(estimation),
+            estimation=estimation,
             model="test-model",
+            provider="openai",
             latency_ms=123,
             input_tokens=10,
             output_tokens=12,
@@ -70,8 +57,9 @@ Duracion estimada: 4 semanas
 def test_estimate_endpoint_can_skip_validation(client, monkeypatch) -> None:
     def fake_generate_estimation(request, prompt_version="v1"):
         return EstimationGenerationResult(
-            response=_fake_llm_response("## Estimacion\nTotal estimated hours: 20h"),
+            estimation="## Estimacion\nTotal estimated hours: 20h",
             model="test-model",
+            provider="openai",
             latency_ms=50,
             input_tokens=10,
             output_tokens=12,

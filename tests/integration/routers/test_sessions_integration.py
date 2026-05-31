@@ -20,7 +20,7 @@ async def test_session_links_requests_and_updates_project_metadata(
     captured_calls = []
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         captured_calls.append(
             {
@@ -110,7 +110,7 @@ async def test_pdf_attachment_content_changes_estimation_output(monkeypatch) -> 
     Session.clear_all()
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         attachment_text = " ".join(
             attachment.content for attachment in request.attachments or []
@@ -181,7 +181,7 @@ async def test_effective_history_sent_to_llm_never_exceeds_configured_max_turns(
     captured_messages = []
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         captured_messages.append(messages)
         return SimpleNamespace(content=f"estimate for {request.description}")

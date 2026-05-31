@@ -5,6 +5,9 @@ reuniones usando LLMs a través de LiteLLM.
 
 ## Inicio rápido (Docker Compose)
 
+El stack incluye **Redis** (`redis:7-alpine`) para caché exact-match de estimaciones. La API
+recibe `REDIS_URL=redis://redis:6379` automáticamente en Compose.
+
 1. Crea el archivo de entorno:
 
 ```bash
@@ -42,10 +45,50 @@ Detener los servicios:
 docker compose down
 ```
 
+Solo Redis (desarrollo local con `uvicorn` en el host):
+
+```bash
+docker compose up redis -d
+```
+
+## Dev Containers (VS Code / Cursor)
+
+El repositorio incluye `.devcontainer/` (imagen con `uv` y Python 3.11).
+
+1. En el **host**, levanta Redis (el dev container se conecta vía `host.docker.internal`):
+
+```bash
+docker compose up redis -d
+```
+
+2. Copia el entorno: `cp .env.example .env` y configura las API keys.
+3. En VS Code o Cursor: **Dev Containers: Reopen in Container** (o *Rebuild and Reopen*).
+4. Tras `postCreateCommand` (`uv sync --group dev`), ejecuta la API:
+
+```bash
+uv run uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+`devcontainer.json` define `REDIS_URL=redis://host.docker.internal:6379` para alcanzar el
+Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, usa
+`redis://localhost:6379` en `.env`.
+
+Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
+
+Cliente Streamlit con streaming SSE (no modifica `streamlit_app.py`):
+
+```bash
+uv run streamlit run streamlit_stream_app.py
+```
+
+Alternativa: levantar todo el stack con Compose (`docker compose up --build`) sin dev container.
+
 ## Funcionalidades
 
 - API REST para generar estimaciones de proyectos.
-- Endpoint opcional de estimación por streaming.
+- Endpoint de estimación por streaming (SSE: eventos `token` / `done` / `error`).
+- Caché exact-match en Redis y fallback opcional de modelo (LiteLLM Router).
+- Campos `cache_hit` y `cost_usd` en la respuesta de estimación.
 - Versionado de prompts (`v1`, `v2`) con plantillas Jinja.
 - Memoria de sesión con `<project_metadata>` inyectado en el system prompt.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
@@ -82,7 +125,8 @@ app/
     estimation/
       v1/
       v2/
-streamlit_app.py                 # Frontend de Streamlit
+streamlit_app.py                 # Frontend de Streamlit (bloqueante)
+streamlit_stream_app.py        # Cliente Streamlit consumiendo SSE
 tests/
   unit/
     prompts/test_loader.py
@@ -126,10 +170,14 @@ Crea un archivo `.env` en la raíz del proyecto:
 
 ```env
 LLM_PROVIDER=openai
-LLM_MODEL=gpt-4o-mini
+PRIMARY_MODEL=gpt-4o-mini
+FALLBACK_MODEL=
 OPENAI_API_KEY=your_key_here
 APP_ENV=development
 LOG_LEVEL=DEBUG
+REDIS_URL=redis://localhost:6379
+CACHE_TTL=86400
+CACHE_ENABLED=true
 ```
 
 Para otros proveedores:
@@ -149,7 +197,7 @@ Endpoints locales predeterminados:
 - `POST /sessions`
 - `POST /sessions/{session_id}/estimate`
 - `POST /api/v1/estimate`
-- `POST /api/v1/estimate/stream`
+- `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
 
 ## Ejecutar la app de Streamlit
 
@@ -286,7 +334,7 @@ Configura el proveedor LLM en `.env`. Ejemplo con Gemini:
 
 ```env
 LLM_PROVIDER=google
-LLM_MODEL=gemini/gemini-2.5-flash
+PRIMARY_MODEL=gemini/gemini-2.5-flash
 GOOGLE_API_KEY=your_key_here
 ```
 
@@ -428,7 +476,9 @@ Resultado esperado de la suite relevante:
     "tokens_used": 1234,
     "cost_estimate": 0.0009
   },
-  "prompt_version": "v1"
+  "prompt_version": "v1",
+  "cache_hit": false,
+  "cost_usd": 0.0009
 }
 ```
 

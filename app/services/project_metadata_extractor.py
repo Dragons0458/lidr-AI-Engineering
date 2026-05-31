@@ -1,18 +1,16 @@
 import instructor
 import structlog
-from litellm import completion
 
 from app.config import get_settings
 from app.errors.llm_error import LLMServiceError
 from app.prompts.loader import render_project_metadata_extraction_prompt
 from app.schemas.estimation import EstimationRequest
+from app.services.llm_wrapper import completion
 from app.services.sessions import ProjectMetadata
 
-settings = get_settings()
 log = structlog.get_logger()
 
 MAX_TOKENS = 700
-MAX_RETRIES = 2
 _client = instructor.from_litellm(completion)
 
 
@@ -33,7 +31,9 @@ def extract_project_metadata(
     ]
 
     try:
-        extracted_metadata = _create_project_metadata_completion(messages)
+        extracted_metadata = _create_project_metadata_completion(
+            messages, request=request
+        )
     except Exception as e:
         log.error("project_metadata_extraction_failed", error=str(e))
         raise LLMServiceError(f"Project metadata extraction failed: {e}") from e
@@ -41,16 +41,25 @@ def extract_project_metadata(
     return _normalize_metadata(extracted_metadata)
 
 
+def _resolve_model(request: EstimationRequest) -> str:
+    settings = get_settings()
+    return request.model or settings.PRIMARY_MODEL
+
+
 # noinspection PyTypeChecker
 def _create_project_metadata_completion(
     messages: list[dict[str, str]],
+    *,
+    request: EstimationRequest,
 ) -> ProjectMetadata:
+    settings = get_settings()
     return _client.chat.completions.create(
-        model=settings.LLM_MODEL,
+        model=_resolve_model(request),
         messages=messages,
         response_model=ProjectMetadata,
         max_tokens=MAX_TOKENS,
-        max_retries=MAX_RETRIES,
+        max_retries=settings.LLM_RETRIES,
+        timeout=settings.LLM_TIMEOUT,
         temperature=0,
         reasoning_effort="none",
     )

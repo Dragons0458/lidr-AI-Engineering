@@ -1,8 +1,10 @@
+import asyncio
+from collections.abc import AsyncIterator
 from typing import Literal
 
 import structlog
 from fastapi import APIRouter, HTTPException, Query
-from starlette.responses import StreamingResponse
+from sse_starlette.sse import EventSourceResponse
 
 from app.config import get_settings
 from app.errors.llm_error import LLMServiceError
@@ -48,18 +50,52 @@ async def estimate(
 async def estimate_stream(
     request: EstimationRequest,
     prompt_version: Literal["v1", "v2"] = Query(default="v1"),
-) -> StreamingResponse:
-    """Streams estimation text. Streaming does not attach structural validation."""
+) -> EventSourceResponse:
+    """Stream estimation text via Server-Sent Events (token / done / error)."""
+
+    model = request.model or settings.PRIMARY_MODEL
+
+    async def event_generator() -> AsyncIterator[dict]:
+        loop = asyncio.get_running_loop()
+        chunks = generate_estimation_stream(
+            request,
+            prompt_version=prompt_version,
+            use_cache=True,
+        )
+
+        def _next_chunk() -> str | None:
+            try:
+                return next(chunks)
+            except StopIteration:
+                return None
+            except Exception as exc:
+                log.error(
+                    "estimate_stream_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                raise
+
+        yield {
+            "event": "meta",
+            "data": f'{{"model":"{model}","prompt_version":"{prompt_version}"}}',
+        }
+
+        try:
+            while True:
+                chunk = await loop.run_in_executor(None, _next_chunk)
+                if chunk is None:
+                    break
+                if chunk:
+                    yield {"event": "token", "data": chunk}
+            yield {"event": "done", "data": "[DONE]"}
+        except LLMServiceError as exc:
+            yield {"event": "error", "data": str(exc)}
+        except Exception as exc:
+            yield {"event": "error", "data": str(exc)}
 
     try:
-        return StreamingResponse(
-            generate_estimation_stream(request, prompt_version=prompt_version),
-            media_type="text/plain; charset=utf-8",
-            headers={
-                "X-LLM-Model": settings.LLM_MODEL,
-                "X-Prompt-Version": prompt_version,
-            },
-        )
+        return EventSourceResponse(event_generator())
     except LLMServiceError as e:
         log.error("estimation_stream_endpoint_error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e

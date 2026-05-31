@@ -17,7 +17,9 @@ dependencies = [
     "python-docx>=1.2.0",
     "python-dotenv",
     "python-multipart",
+    "redis>=5.0",
     "ruff",
+    "sse-starlette>=2.1",
     "starlette>=1.0.0",
     "streamlit>=1.57.0",
     "structlog",
@@ -27,6 +29,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
+    "fakeredis>=2.20",
     "deepeval>=4.0.2",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",

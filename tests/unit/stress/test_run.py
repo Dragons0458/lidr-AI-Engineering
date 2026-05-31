@@ -28,7 +28,7 @@ async def test_run_stress_writes_csv_without_llm(monkeypatch, tmp_path) -> None:
     Session.clear_all()
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         return SimpleNamespace()
 

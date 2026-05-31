@@ -1,12 +1,29 @@
 services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
   api:
     build:
       context: .
       dockerfile: Dockerfile
     env_file:
       - .env
+    environment:
+      REDIS_URL: redis://redis:6379
     ports:
       - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
 
   streamlit:
     build:
@@ -16,6 +33,7 @@ services:
       - .env
     environment:
       ESTIMATION_API_BASE_URL: http://api:8000/api/v1
+      REDIS_URL: redis://redis:6379
     command:
       [
         "streamlit",
@@ -29,3 +47,8 @@ services:
     depends_on:
       api:
         condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  redis_data:

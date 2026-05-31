@@ -98,3 +98,5 @@ class EstimationResponse(BaseModel):
     preprocessing: PreprocessingMode = "none"
     extracted_requirements: str | None = None
     validation: StructureCheck | None = None
+    cache_hit: bool = False
+    cost_usd: float = 0.0

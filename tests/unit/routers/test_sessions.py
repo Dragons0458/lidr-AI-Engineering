@@ -74,7 +74,7 @@ def test_session_estimate_extracts_attachment_text(monkeypatch) -> None:
     captured = {}
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         captured["request"] = request
         captured["prompt_version"] = prompt_version
@@ -152,7 +152,7 @@ def test_session_estimate_accepts_attachments_without_description(monkeypatch) -
     captured = {}
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         captured["request"] = request
         return SimpleNamespace()
@@ -211,7 +211,7 @@ def test_session_estimate_emits_turn_observed(monkeypatch) -> None:
     log_events = []
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         return SimpleNamespace()
 
@@ -310,7 +310,7 @@ def test_session_estimate_accepts_form_controls_and_reference_projects(
     captured = {}
 
     def fake_generate_estimation(
-        request, prompt_version="v1", project_metadata=None, messages=None
+        request, prompt_version="v1", project_metadata=None, messages=None, **kwargs
     ):
         captured["request"] = request
         captured["prompt_version"] = prompt_version

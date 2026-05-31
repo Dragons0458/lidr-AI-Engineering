@@ -1,12 +1,20 @@
 {
-  "name": "uv",
+  "name": "estimador-cag",
   "build": {
     "dockerfile": "Dockerfile"
   },
   "remoteUser": "developer",
+  "forwardPorts": [8000, 6379, 8501],
+  "postCreateCommand": "uv sync --group dev",
+  "remoteEnv": {
+    "REDIS_URL": "redis://host.docker.internal:6379"
+  },
   "customizations": {
-    "jetbrains": {
-      "backend": "PyCharm"
+    "vscode": {
+      "extensions": [
+        "ms-python.python",
+        "charliermarsh.ruff"
+      ]
     }
   }
 }

@@ -122,6 +122,7 @@ async def estimate_session(
                 prompt_version=prompt_version,
                 project_metadata=session.metadata,
                 messages=messages,
+                use_cache=False,
             ),
             prompt_version=prompt_version,
         )
@@ -216,8 +217,8 @@ def _build_turn_observation(
         "summary_chars": 0,
         "tokens_in": response.usage.input_tokens or 0,
         "tokens_out": response.usage.output_tokens or 0,
-        "cost_usd": response.usage.cost_estimate or 0.0,
+        "cost_usd": response.cost_usd or response.usage.cost_estimate or 0.0,
         "latency_ms": response.latency_ms,
-        "cache_hit_kind": "none",
+        "cache_hit_kind": "exact" if response.cache_hit else "none",
         "last_resolved_tier": None,
     }
