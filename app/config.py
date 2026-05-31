@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import Field
@@ -43,6 +44,15 @@ class Settings(BaseSettings):
     # --- Session 5: Actor-Critic-Boss ---
     CRITIC_MODEL: str | None = None
     BOSS_MAX_ITERATIONS: int = Field(default=3, ge=1, le=5)
+    # --- Session 6: ingestion + persistence + PII ---
+    DATABASE_URL: str = (
+        "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
+    )
+    CATALOG_PATH: Path = Path("data/catalog/catalog.yaml")
+    INGESTION_DATA_ROOT: Path = Path("data/seed")
+    PRESIDIO_SPACY_MODEL: str = "es_core_news_md"
+    PSEUDONYM_FAKER_LOCALE: str = "es_ES"
+    PSEUDONYM_HASH_SALT: str = "change-me-in-prod"
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"
     CORS_ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])
