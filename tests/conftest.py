@@ -63,9 +63,14 @@ def isolated_llm_wrapper(monkeypatch) -> None:
         cache=cache,
         cache_enabled=False,
     )
+    from app.dependencies import get_catalog, get_filesystem_loader, get_parser_registry
+
     get_cache.cache_clear()
     get_llm_wrapper.cache_clear()
     get_semantic_cache.cache_clear()
+    get_catalog.cache_clear()
+    get_filesystem_loader.cache_clear()
+    get_parser_registry.cache_clear()
     monkeypatch.setattr(dependencies, "get_cache", lambda: cache)
     monkeypatch.setattr(dependencies, "get_llm_wrapper", lambda: wrapper)
     monkeypatch.setattr(dependencies, "get_semantic_cache", lambda: None)
@@ -85,3 +90,6 @@ def isolated_llm_wrapper(monkeypatch) -> None:
     get_cache.cache_clear()
     get_llm_wrapper.cache_clear()
     get_semantic_cache.cache_clear()
+    get_catalog.cache_clear()
+    get_filesystem_loader.cache_clear()
+    get_parser_registry.cache_clear()
