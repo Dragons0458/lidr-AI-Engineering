@@ -1,6 +1,7 @@
 from app.prompts.loader import (
     render_estimation_prompt,
     render_project_metadata_extraction_prompt,
+    render_structured_estimation_prompt,
 )
 from app.schemas.attachments import AttachmentText
 from app.schemas.estimation import (
@@ -235,3 +236,21 @@ def test_user_prompt_renders_attachments_with_clear_separator() -> None:
     assert '<attachment filename="scope.txt"><![CDATA[' in user_prompt
     assert "--- attachment: scope.txt ---" in user_prompt
     assert "Authentication and reporting requirements." in user_prompt
+
+
+def test_structured_v3_follow_up_includes_conversation_context() -> None:
+    request = _build_request(description="¿Se puede hacer con Angular y NestJS?")
+
+    system_prompt, user_prompt = render_structured_estimation_prompt(
+        request=request,
+        conversation_context="Usuario: app de tortas de queso\nAsistente: MVP 110h",
+        is_follow_up=True,
+        enriched_description=(
+            "Contexto previo...\n\nMensaje actual: ¿Se puede hacer con Angular y NestJS?"
+        ),
+    )
+
+    assert "multi-turn" in system_prompt.lower() or "follow-up" in system_prompt.lower()
+    assert "<conversation_context>" in user_prompt
+    assert "<latest_user_message>" in user_prompt
+    assert "Angular y NestJS" in user_prompt

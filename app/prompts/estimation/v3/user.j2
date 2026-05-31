@@ -1,0 +1,27 @@
+Generate a structured project estimation for this request.
+
+{% if is_follow_up and conversation_context %}
+<conversation_context><![CDATA[{{ conversation_context }}]]></conversation_context>
+
+<latest_user_message><![CDATA[{{ latest_message }}]]></latest_user_message>
+{% else %}
+<project_description><![CDATA[{{ description }}]]></project_description>
+{% endif %}
+{% if attachments and not is_follow_up %}
+<attachments>
+{% for attachment in attachments %}
+<attachment filename="{{ attachment.filename }}"><![CDATA[{{ attachment.content }}]]></attachment>
+{% endfor %}
+</attachments>
+{% endif %}
+
+{% if critic_feedback and critic_feedback.issues %}
+<critic_feedback verdict="{{ critic_feedback.verdict }}">
+{% for issue in critic_feedback.issues %}
+<issue severity="{{ issue.severity }}" category="{{ issue.category }}" field="{{ issue.field_path }}">
+<description>{{ issue.description }}</description>
+{% if issue.suggested_fix %}<suggested_fix>{{ issue.suggested_fix }}</suggested_fix>{% endif %}
+</issue>
+{% endfor %}
+</critic_feedback>
+{% endif %}

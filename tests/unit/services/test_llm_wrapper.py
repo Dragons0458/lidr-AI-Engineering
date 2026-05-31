@@ -4,8 +4,16 @@ from unittest.mock import MagicMock
 import fakeredis
 import pytest
 
+from pydantic import BaseModel, Field
+
+from instructor import Mode
+
 from app.services.cache import EstimationCache
-from app.services.llm_wrapper import LLMWrapper
+from app.services.llm_wrapper import LLMWrapper, structured_instructor_mode
+
+
+class _SampleStructured(BaseModel):
+    answer: str = Field(min_length=1)
 
 
 def _llm_response(
@@ -142,6 +150,66 @@ def test_fallback_uses_router(monkeypatch) -> None:
     )
     router_mock.completion.assert_called_once()
     assert result["estimation"] == "from router"
+
+
+def test_structured_instructor_mode_uses_json_for_google_litellm() -> None:
+    assert structured_instructor_mode("gemini-2.5-flash") == Mode.JSON
+    assert structured_instructor_mode("gemini/gemini-2.5-flash") == Mode.JSON
+
+
+def test_structured_instructor_mode_uses_tools_for_openai() -> None:
+    assert structured_instructor_mode("gpt-4o-mini") == Mode.TOOLS
+
+
+def test_complete_structured_chat_disables_gemini_thinking(
+    monkeypatch, wrapper: LLMWrapper
+) -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return _SampleStructured(answer="ok")
+
+    monkeypatch.setattr(
+        "app.services.llm_wrapper._get_instructor_client",
+        lambda _model: FakeClient(),
+    )
+    wrapper.complete_structured_chat(
+        messages=[{"role": "user", "content": "hi"}],
+        response_model=_SampleStructured,
+        model="gemini/gemini-2.5-flash",
+    )
+    assert captured["reasoning_effort"] == "none"
+
+
+def test_complete_structured_chat_returns_model_and_meta(
+    monkeypatch, wrapper: LLMWrapper
+) -> None:
+    expected = _SampleStructured(answer="structured")
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    return expected
+
+    monkeypatch.setattr(
+        "app.services.llm_wrapper._get_instructor_client",
+        lambda _model: FakeClient(),
+    )
+    instance, meta = wrapper.complete_structured_chat(
+        messages=[{"role": "user", "content": "hi"}],
+        response_model=_SampleStructured,
+        model="gpt-4o-mini",
+    )
+    assert instance.answer == "structured"
+    assert meta["model"] == "gpt-4o-mini"
+    assert meta["cache_hit"] is False
 
 
 def test_complete_stream_replays_cache(monkeypatch, wrapper: LLMWrapper) -> None:

@@ -4,16 +4,43 @@ from __future__ import annotations
 
 import time
 from collections.abc import Iterator
-from typing import Any
+from typing import Any, TypeVar
 
+import instructor
 import structlog
+from instructor import Mode
 from litellm import Router
+from pydantic import BaseModel
 from litellm import completion as litellm_completion
 
 from app.services.cache import EstimationCache
 from app.services.calc_service import calculate_cost
 
 log = structlog.get_logger()
+T = TypeVar("T", bound=BaseModel)
+_instructor_clients: dict[Mode, Any] = {}
+
+
+def structured_instructor_mode(model: str) -> Mode:
+    """Pick Instructor mode for structured output via LiteLLM.
+
+    Google/Gemini: ``Mode.JSON`` (``response_format=json_object`` + schema in the
+    system prompt). ``Mode.GEMINI_JSON`` is for the native Gemini SDK and forbids
+    passing ``model`` on ``create()`` — incompatible with ``from_litellm``.
+
+    OpenAI/Anthropic: tool calling via ``Mode.TOOLS``.
+    """
+    if provider_from_model(model) == "google":
+        return Mode.JSON
+    return Mode.TOOLS
+
+
+def _get_instructor_client(model: str) -> Any:
+    """Return a cached Instructor client for the mode required by ``model``."""
+    mode = structured_instructor_mode(model)
+    if mode not in _instructor_clients:
+        _instructor_clients[mode] = instructor.from_litellm(completion, mode=mode)
+    return _instructor_clients[mode]
 
 
 def _normalise_model_name(model: str) -> str:
@@ -156,6 +183,75 @@ class LLMWrapper:
             self.cache.set(cache_key, result)
 
         return {**result, "cache_hit": False}
+
+    def complete_structured_chat(
+        self,
+        *,
+        messages: list[dict[str, str]],
+        response_model: type[T],
+        model: str | None = None,
+        max_tokens: int = 4000,
+        max_retries: int = 2,
+        temperature: float = 0,
+        use_cache: bool = False,
+    ) -> tuple[T, dict[str, Any]]:
+        """Structured completion via Instructor; returns validated model and metadata."""
+        resolved_model = model or self.primary_model
+        instructor_mode = structured_instructor_mode(resolved_model)
+        log.info(
+            "llm_structured_call_started",
+            model=resolved_model,
+            response_model=response_model.__name__,
+            instructor_mode=instructor_mode.value,
+        )
+        started_at = time.perf_counter()
+        call_kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+            "response_model": response_model,
+            "max_tokens": max_tokens,
+            "max_retries": max_retries,
+            "timeout": self.timeout,
+            "temperature": temperature,
+        }
+        provider = provider_from_model(resolved_model)
+        # Gemini 2.5 counts hidden "thinking" tokens against max_output_tokens;
+        # disable it for structured JSON so the budget goes to the visible response.
+        if provider in ("openai", "google"):
+            call_kwargs["reasoning_effort"] = "none"
+        try:
+            instance = _get_instructor_client(resolved_model).chat.completions.create(
+                **call_kwargs
+            )
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            log.error(
+                "llm_structured_call_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+                latency_ms=latency_ms,
+            )
+            raise
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        meta = {
+            "model": _normalise_model_name(resolved_model),
+            "provider": provider_from_model(resolved_model),
+            "latency_ms": latency_ms,
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+            },
+            "cost_usd": 0.0,
+            "cache_hit": False,
+        }
+        log.info(
+            "llm_structured_call_completed",
+            model=meta["model"],
+            latency_ms=latency_ms,
+        )
+        return instance, meta
 
     def complete_stream(
         self,

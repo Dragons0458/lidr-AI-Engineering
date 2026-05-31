@@ -1,0 +1,27 @@
+<transcript><![CDATA[{{ transcript }}]]></transcript>
+
+<project_metadata>
+{{ project_metadata }}
+</project_metadata>
+
+<audience_tier>{{ tier }}</audience_tier>
+
+<estimation_under_review>
+<summary>{{ result.summary }}</summary>
+<confidence_pct>{{ result.confidence_pct }}</confidence_pct>
+<total_base_hours>{{ result.total_base_hours }}</total_base_hours>
+<total_buffer_hours>{{ result.total_buffer_hours }}</total_buffer_hours>
+<total_hours>{{ result.total_hours }}</total_hours>
+<total_cost_eur>{{ result.total_cost_eur }}</total_cost_eur>
+<phases>
+{% for phase in result.phases %}
+<phase>
+<name>{{ phase.name }}</name>
+<base_hours>{{ phase.base_hours }}</base_hours>
+<buffer_hours>{{ phase.buffer_hours }}</buffer_hours>
+<team>{{ phase.team }}</team>
+<summary>{{ phase.summary }}</summary>
+</phase>
+{% endfor %}
+</phases>
+</estimation_under_review>

@@ -6,9 +6,9 @@ from markupsafe import escape
 import structlog
 
 from app.context.examples import build_prompt_examples
-from app.schemas.estimation import ExampleFormat
-from app.schemas.estimation import EstimationRequest
-from app.services.sessions import ProjectMetadata
+from app.schemas.critic import CriticFeedback
+from app.schemas.estimation import EstimationResult, ExampleFormat, EstimationRequest
+from app.services.sessions import ChatMessage, ProjectMetadata
 
 _PROMPTS_DIR = Path(__file__).resolve().parent
 _ESTIMATION_PROMPTS_ROOT = "estimation"
@@ -154,6 +154,99 @@ def format_project_metadata_for_prompt(
         )
 
     return "\n".join(lines)
+
+
+def render_structured_estimation_prompt(
+    *,
+    request: EstimationRequest,
+    metadata: ProjectMetadata | None = None,
+    tier: str = "default",
+    critic_feedback: CriticFeedback | None = None,
+    conversation_context: str | None = None,
+    is_follow_up: bool = False,
+    enriched_description: str | None = None,
+    version: str = "v3",
+    use_examples: bool | None = None,
+    num_examples: int | None = None,
+    example_format: ExampleFormat | None = None,
+) -> tuple[str, str]:
+    """Render system and user prompts for structured (ACB) estimation."""
+    template_base_path = f"{_ESTIMATION_PROMPTS_ROOT}/{version}"
+    selected_use_examples = (
+        request.use_examples if use_examples is None else use_examples
+    )
+    selected_num_examples = (
+        request.num_examples if num_examples is None else num_examples
+    )
+    selected_example_format = (
+        request.example_format if example_format is None else example_format
+    )
+    description = enriched_description or request.description
+    template_context = {
+        "request": request,
+        "project_type": request.project_type.value,
+        "detail_level": request.detail_level.value,
+        "description": description,
+        "latest_message": request.description,
+        "conversation_context": conversation_context or "",
+        "is_follow_up": is_follow_up,
+        "attachments": request.attachments or [],
+        "project_metadata": format_project_metadata_for_prompt(metadata),
+        "tier": tier,
+        "critic_feedback": critic_feedback,
+        "examples": build_prompt_examples(
+            use_examples=selected_use_examples,
+            num_examples=selected_num_examples,
+            example_format=selected_example_format,
+        ),
+    }
+    system_prompt = _jinja_env.get_template(f"{template_base_path}/system.j2").render(
+        **template_context
+    )
+    user_prompt = _jinja_env.get_template(f"{template_base_path}/user.j2").render(
+        **template_context
+    )
+    return system_prompt, user_prompt
+
+
+def render_critic_prompt(
+    *,
+    transcript: str,
+    metadata: ProjectMetadata,
+    tier: str,
+    result: EstimationResult,
+    version: str = "v1",
+) -> tuple[str, str]:
+    template_base = f"critic/{version}"
+    context = {
+        "transcript": transcript,
+        "project_metadata": format_project_metadata_for_prompt(metadata),
+        "tier": tier,
+        "result": result,
+    }
+    system_prompt = _jinja_env.get_template(f"{template_base}/system.j2").render(
+        **context
+    )
+    user_prompt = _jinja_env.get_template(f"{template_base}/user.j2").render(**context)
+    return system_prompt, user_prompt
+
+
+def render_conversation_summary_prompt(
+    *,
+    previous_summary: str,
+    evicted: list[ChatMessage],
+    version: str = "v1",
+) -> tuple[str, str]:
+    template_base = f"conversation_summary/{version}"
+    context = {
+        "previous_summary": previous_summary,
+        "evicted": evicted,
+    }
+    system_prompt = _jinja_env.get_template(f"{template_base}/system.j2").render(
+        **context
+    )
+    user_prompt = _jinja_env.get_template(f"{template_base}/user.j2").render(**context)
+    return system_prompt, user_prompt
 
 
 def _is_project_metadata_empty(project_metadata: ProjectMetadata) -> bool:

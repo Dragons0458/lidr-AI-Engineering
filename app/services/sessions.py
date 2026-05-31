@@ -9,8 +9,10 @@ if TYPE_CHECKING:
 
 MessageRole = Literal["system", "user", "assistant", "tool"]
 HistoryMessageRole = Literal["user", "assistant", "tool"]
-PromptVersion = Literal["v1", "v2"]
+PromptVersion = Literal["v1", "v2", "v3"]
 MAX_TURNS = 6
+
+_SUMMARY_PREFIX = "[Resumen de la conversación previa]\n"
 
 
 class ChatMessage(BaseModel):
@@ -38,18 +40,15 @@ class ConversationTurn(BaseModel):
 
 @dataclass
 class ConversationHistory:
-    """Volatile chat history with a sliding window.
-
-    The service is still in a single-process phase, so accepting loss of this
-    state on restart keeps the implementation simple until persistence is a real
-    product requirement.
-    """
+    """Volatile chat history with optional anchor/summary compression."""
 
     max_turns: int = MAX_TURNS
     turns: deque[ConversationTurn] = field(init=False)
+    anchors: list[ChatMessage] = field(default_factory=list)
+    summary: str | None = None
 
     def __post_init__(self) -> None:
-        self.turns = deque(maxlen=max(self.max_turns, 0))
+        self.turns = deque()
 
     def add_message(self, role: HistoryMessageRole, content: str) -> None:
         message = ChatMessage(role=role, content=content)
@@ -69,6 +68,37 @@ class ConversationHistory:
 
         self.turns[-1].tool_messages.append(message)
 
+    def trim_to_max_turns(self) -> None:
+        """Drop oldest turns when over capacity (used when compression is disabled)."""
+        while len(self.turns) > max(self.max_turns, 0):
+            self.turns.popleft()
+
+    @property
+    def anchors_count(self) -> int:
+        return len(self.anchors)
+
+    @property
+    def summary_chars(self) -> int:
+        return len(self.summary or "")
+
+    def recent_message_count(self) -> int:
+        return sum(len(turn.messages) for turn in self.turns)
+
+    def context_messages(self) -> list[ChatMessage]:
+        """Summary, anchors, and recent turns (no system/fresh user prompt)."""
+        messages: list[ChatMessage] = []
+        if self.summary:
+            messages.append(
+                ChatMessage(
+                    role="user",
+                    content=f"{_SUMMARY_PREFIX}{self.summary}",
+                )
+            )
+        messages.extend(self.anchors)
+        for turn in self.turns:
+            messages.extend(turn.messages)
+        return messages
+
     def to_messages_list(
         self,
         request: "EstimationRequest",
@@ -76,32 +106,20 @@ class ConversationHistory:
         prompt_version: PromptVersion = "v1",
         project_metadata: "ProjectMetadata | None" = None,
     ) -> list[dict[str, str]]:
-        """Build API-ready messages with a fresh system prompt.
-
-        The system prompt is intentionally rendered at call time so mutable
-        project metadata cannot leave the conversation with stale instructions.
-        """
+        """Build API-ready messages with a fresh system prompt."""
         from app.prompts.loader import render_estimation_prompt
 
         system_prompt, user_prompt = render_estimation_prompt(
             request, version=prompt_version, project_metadata=project_metadata
         )
         messages = [ChatMessage(role="system", content=system_prompt)]
-
-        for turn in self.turns:
-            messages.extend(turn.messages)
-
+        messages.extend(self.context_messages())
         messages.append(ChatMessage(role="user", content=user_prompt))
         return [message.model_dump() for message in messages]
 
 
 class ProjectMetadata(BaseModel):
-    """Mutable, in-memory project facts inferred during a session.
-
-    This metadata is intentionally process-local for now: early iterations value
-    fast feedback over durability, and losing it on deploy/restart is acceptable
-    until multi-worker or long-lived sessions are required.
-    """
+    """Mutable, in-memory project facts inferred during a session."""
 
     project_name: str | None = None
     assumed_team_size: int | None = Field(default=None, ge=1)
@@ -112,12 +130,7 @@ class ProjectMetadata(BaseModel):
 
 @dataclass
 class Session:
-    """Process-local session container indexed by ``session_id``.
-
-    A plain dictionary is enough at this stage because the API is not relying on
-    cross-process continuity. Persistence can be added later behind this class
-    without changing callers that use ``get_or_create``.
-    """
+    """Process-local session container indexed by ``session_id``."""
 
     session_id: str
     history: ConversationHistory = field(
@@ -126,6 +139,8 @@ class Session:
     metadata: ProjectMetadata = field(default_factory=ProjectMetadata)
     turn_count: int = 0
     last_turn_observation: dict[str, object] | None = None
+    last_resolved_tier: str | None = None
+    last_tier_rule: str | None = None
 
     _sessions: ClassVar[dict[str, "Session"]] = {}
 

@@ -34,6 +34,15 @@ class Settings(BaseSettings):
     INPUT_GUARDRAILS_ENABLED: bool = True
     OUTPUT_GUARDRAILS_ENABLED: bool = True
     CONVERSATION_MAX_TURNS: int = Field(default=6, ge=0)
+    # --- Session 5: tier ---
+    TIER_RESOLUTION_ENABLED: bool = False
+    # --- Session 5: memory compression ---
+    MEMORY_COMPRESSION_ENABLED: bool = False
+    ANCHOR_DETECTION_MODE: Literal["heuristic", "llm"] = "heuristic"
+    COMPRESSION_MODEL: str | None = None
+    # --- Session 5: Actor-Critic-Boss ---
+    CRITIC_MODEL: str | None = None
+    BOSS_MAX_ITERATIONS: int = Field(default=3, ge=1, le=5)
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"
     CORS_ALLOWED_ORIGINS: list[str] = Field(default_factory=lambda: ["*"])

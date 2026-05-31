@@ -58,6 +58,21 @@ def test_get_session_debug_returns_snapshot() -> None:
     }
 
 
+def test_get_session_debug_exposes_tier_after_resolution(monkeypatch) -> None:
+    Session.clear_all()
+    session = Session.get_or_create("session-tier")
+    monkeypatch.setattr("app.routers.sessions.settings.TIER_RESOLUTION_ENABLED", True)
+    session.last_resolved_tier = "developer"
+    session.last_tier_rule = "technical_audience"
+    client = TestClient(app)
+
+    response = client.get(f"{API_PREFIX}/sessions/{session.session_id}")
+
+    assert response.status_code == 200
+    assert response.json()["last_resolved_tier"] == "developer"
+    assert response.json()["last_tier_rule"] == "technical_audience"
+
+
 def test_get_session_debug_returns_404_for_unknown_session() -> None:
     Session.clear_all()
     client = TestClient(app)
@@ -270,6 +285,7 @@ def test_session_estimate_emits_turn_observed(monkeypatch) -> None:
                 "latency_ms": 123,
                 "cache_hit_kind": "none",
                 "last_resolved_tier": None,
+                "last_tier_rule": None,
             },
         )
     ]

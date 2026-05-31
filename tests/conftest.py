@@ -28,6 +28,26 @@ def client() -> TestClient:
 
 
 @pytest.fixture(autouse=True)
+def disable_session5_env_features(monkeypatch) -> None:
+    """Keep unit tests deterministic regardless of developer .env Session 5 flags."""
+    for module_path in (
+        "app.routers.sessions",
+        "app.services.estimation_service",
+        "app.routers.estimations",
+    ):
+        monkeypatch.setattr(
+            f"{module_path}.settings.TIER_RESOLUTION_ENABLED",
+            False,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            f"{module_path}.settings.MEMORY_COMPRESSION_ENABLED",
+            False,
+            raising=False,
+        )
+
+
+@pytest.fixture(autouse=True)
 def isolated_llm_wrapper(monkeypatch) -> None:
     """In-memory Redis and a wrapper with cache disabled for deterministic unit tests."""
     from app.dependencies import get_cache, get_llm_wrapper, get_semantic_cache

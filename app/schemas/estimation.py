@@ -1,10 +1,15 @@
+from __future__ import annotations
+
 from datetime import datetime
 from enum import Enum
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from app.schemas.attachments import AttachmentText
+
+OUT_OF_SCOPE_PREFIX = "Out of scope:"
+LOW_CONFIDENCE_THRESHOLD = 30
 
 PreprocessingMode = Literal["none", "inline_cleaning", "two_phase"]
 ExampleFormat = Literal["markdown", "json", "narrative"]
@@ -83,6 +88,57 @@ class StructureCheck(BaseModel):
     finish_reason_ok: bool
     score: float
     issues: list[str] = Field(default_factory=list)
+
+
+class Phase(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+    base_hours: int = Field(ge=0, le=100_000)
+    buffer_hours: int = Field(ge=0, le=100_000)
+    team: str = Field(min_length=1, max_length=120)
+    summary: str = Field(min_length=10, max_length=600)
+
+
+class EstimationResult(BaseModel):
+    summary: str = Field(min_length=10, max_length=1200)
+    confidence_pct: int = Field(ge=0, le=100)
+    phases: list[Phase] = Field(min_length=1, max_length=12)
+    total_base_hours: int = Field(ge=0, le=200_000)
+    total_buffer_hours: int = Field(ge=0, le=200_000)
+    total_hours: int = Field(ge=1, le=400_000)
+    total_cost_eur: int = Field(ge=0, le=2_000_000)
+
+    @model_validator(mode="after")
+    def validate_totals_and_scope(self) -> EstimationResult:
+        phase_base = sum(phase.base_hours for phase in self.phases)
+        phase_buffer = sum(phase.buffer_hours for phase in self.phases)
+        if self.total_base_hours != phase_base:
+            raise ValueError("total_base_hours must equal sum of phase base_hours")
+        if self.total_buffer_hours != phase_buffer:
+            raise ValueError("total_buffer_hours must equal sum of phase buffer_hours")
+        if self.total_hours != self.total_base_hours + self.total_buffer_hours:
+            raise ValueError(
+                "total_hours must equal total_base_hours + total_buffer_hours"
+            )
+        if (
+            self.confidence_pct < LOW_CONFIDENCE_THRESHOLD
+            and not self.summary.startswith(OUT_OF_SCOPE_PREFIX)
+        ):
+            raise ValueError(
+                f"summary must start with {OUT_OF_SCOPE_PREFIX!r} when confidence is low"
+            )
+        return self
+
+
+class StructuredEstimationResponse(BaseModel):
+    result: EstimationResult
+    model: str
+    provider: str
+    prompt_version: str
+    latency_ms: int = 0
+    usage: TokenUsage
+    cost_usd: float = 0.0
+    project_metadata: dict[str, object] | None = None
+    cache_hit: bool = False
 
 
 class EstimationResponse(BaseModel):

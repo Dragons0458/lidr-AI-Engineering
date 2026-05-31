@@ -14,9 +14,21 @@ from app.prompts.loader import (
     render_estimation_prompt,
     render_requirements_extraction_prompt,
 )
-from app.schemas.estimation import EstimationRequest, PreprocessingMode, TokenUsage
+from app.schemas.acb import ACBResponse
+from app.schemas.critic import CriticFeedback
+from app.schemas.estimation import (
+    EstimationRequest,
+    EstimationResult,
+    PreprocessingMode,
+    TokenUsage,
+)
+from app.services.boss import Boss
 from app.services.cache import EstimationCache
-from app.services.sessions import ProjectMetadata
+from app.services.conversation_transcript import build_acb_turn_context
+from app.services.critic import Critic
+from app.services.sessions import ProjectMetadata, Session
+from app.services.tier_resolver import Tier, resolve_tier
+from app.prompts.loader import render_structured_estimation_prompt
 
 settings = get_settings()
 log = structlog.get_logger()
@@ -397,6 +409,127 @@ def generate_estimation_stream(
                 },
                 prompt_version,
             )
+
+
+def _resolve_tier_for_request(
+    *,
+    transcript: str,
+    metadata: ProjectMetadata,
+    tier_override: str | None,
+) -> tuple[Tier, str]:
+    override: Tier | None = None
+    if tier_override:
+        try:
+            override = Tier(tier_override)
+        except ValueError as exc:
+            raise ValueError(f"Invalid tier: {tier_override}") from exc
+    if settings.TIER_RESOLUTION_ENABLED or override is not None:
+        return resolve_tier(
+            transcript=transcript,
+            metadata=metadata,
+            override=override,
+        )
+    return Tier.DEFAULT, "default"
+
+
+def generate_estimation_acb(
+    request: EstimationRequest,
+    *,
+    session: Session,
+    tier_override: str | None = None,
+    prompt_version: str = "v3",
+) -> ACBResponse:
+    """Structured estimation with Actor-Critic-Boss orchestration."""
+    _run_input_guardrails(request)
+
+    enriched_transcript, conversation_context, is_follow_up = build_acb_turn_context(
+        session, request
+    )
+    resolved_tier, tier_rule = _resolve_tier_for_request(
+        transcript=enriched_transcript,
+        metadata=session.metadata,
+        tier_override=tier_override,
+    )
+    session.last_resolved_tier = resolved_tier.value
+    session.last_tier_rule = tier_rule
+
+    model = request.model or settings.PRIMARY_MODEL
+    critic_model = settings.CRITIC_MODEL or settings.PRIMARY_MODEL
+    wrapper = get_llm_wrapper()
+    critic_service = Critic(wrapper, critic_model)
+    started_at = time.perf_counter()
+    total_input = 0
+    total_output = 0
+    total_cost = 0.0
+    used_model = model
+    used_provider = "unknown"
+
+    def _actor(critic_feedback: CriticFeedback | None) -> EstimationResult:
+        nonlocal total_input, total_output, total_cost, used_model, used_provider
+        system_prompt, user_prompt = render_structured_estimation_prompt(
+            request=request,
+            metadata=session.metadata,
+            tier=resolved_tier.value,
+            critic_feedback=critic_feedback,
+            conversation_context=conversation_context,
+            is_follow_up=is_follow_up,
+            enriched_description=enriched_transcript,
+            version=prompt_version,
+        )
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
+
+        result, meta = wrapper.complete_structured_chat(
+            messages=messages,
+            response_model=EstimationResult,
+            model=model,
+            max_tokens=request.max_tokens,
+            max_retries=settings.LLM_RETRIES,
+            temperature=0,
+            use_cache=False,
+        )
+        usage = meta.get("usage") or {}
+        total_input += int(usage.get("input_tokens") or 0)
+        total_output += int(usage.get("output_tokens") or 0)
+        total_cost += float(meta.get("cost_usd") or 0.0)
+        used_model = str(meta.get("model") or model)
+        used_provider = str(meta.get("provider") or "unknown")
+        return result
+
+    def _critic(draft: EstimationResult) -> CriticFeedback:
+        nonlocal total_input, total_output, total_cost
+        feedback = critic_service.review(
+            transcript=enriched_transcript,
+            metadata=session.metadata,
+            tier=resolved_tier,
+            result=draft,
+        )
+        return feedback
+
+    final_result, trace = Boss(max_iterations=settings.BOSS_MAX_ITERATIONS).run(
+        actor=_actor,
+        critic=_critic,
+    )
+    latency_ms = int((time.perf_counter() - started_at) * 1000)
+
+    return ACBResponse(
+        result=final_result,
+        model=used_model,
+        provider=used_provider,
+        prompt_version=prompt_version,
+        latency_ms=latency_ms,
+        usage=TokenUsage(
+            input_tokens=total_input,
+            output_tokens=total_output,
+            tokens_used=total_input + total_output,
+            cost_estimate=total_cost,
+        ),
+        cost_usd=total_cost,
+        cache_hit=False,
+        acb=trace,
+    )
 
 
 def _resolve_messages(
