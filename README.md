@@ -102,6 +102,8 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - **Sesión 6** (data-driven AI): catálogo YAML de fuentes, ingesta JSON/TXT, limpieza con
   pandas/Pandera, pseudonimización PII/GDPR (Presidio + Faker), jobs en Postgres y API
   `POST/GET /api/v1/ingestion/*`.
+- **Sesión 7**: pipeline mínimo de embeddings (`POST /api/v1/embeddings/ingest`),
+  chunking estructural de presupuestos JSON y CLI de similitud coseno.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - Interfaz de Streamlit para pruebas interactivas y uso demostrativo.
@@ -117,6 +119,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Streamlit
 - Structlog
 - RedisVL + NumPy (caché semántico)
+- OpenAI SDK + tiktoken (embeddings y conteo de tokens)
 - SQLAlchemy 2.0 + Alembic + psycopg (Postgres)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
@@ -129,6 +132,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 app/
   main.py                        # Punto de entrada de la app FastAPI
   config.py                      # Configuración basada en variables de entorno
+  embedding_pipeline/            # Chunking estructural + embeddings OpenAI (Sesión 7)
   guardrails/                    # Input/output guardrails (moderación, PII, scope)
   cache/semantic.py              # Caché semántico RedisVL
   ingestion/                     # Catálogo, parsers JSON/TXT, limpieza, PII, orquestador
@@ -149,8 +153,10 @@ app/
 alembic/                         # Migraciones Postgres (Sesión 6)
 data/
   catalog/catalog.yaml           # Decisiones include/review/exclude por fuente
+  budgets_sample.json            # Sample sintético de 15 presupuestos (Sesión 7)
   seed/                          # Corpus de demo (budgets JSON, transcripts TXT)
 scripts/
+  compare.py                     # Coseno entre dos embeddings OpenAI (Sesión 7)
   preflight_s06.py               # Checks de entorno antes de la sesión en vivo
   demo_cleaning_s06.py           # Demo limpieza + validación Pandera
   demo_pii_s06.py                # Demo pseudonimización consistente
@@ -251,6 +257,7 @@ Endpoints locales predeterminados:
 - `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
 - `POST /api/v1/ingestion/runs` (202 — dispara ingesta en background)
 - `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
+- `POST /api/v1/embeddings/ingest` (chunking estructural + embeddings en memoria)
 
 Con Postgres en marcha (`docker compose up` aplica `alembic upgrade head` al arrancar la API):
 
@@ -284,6 +291,49 @@ uv run python -m app.ingestion.architecture
 uv run python -m app.ingestion.catalog.inspect data/seed
 uv run python -m app.ingestion.catalog.loader data/catalog/catalog.yaml
 ```
+
+## Sesión 7 — embedding pipeline
+
+El pipeline mínimo de embeddings convierte presupuestos JSON en chunks
+estructurales, genera embeddings con OpenAI y devuelve los vectores en memoria.
+No persiste nada todavía; pgvector queda para la siguiente sesión.
+
+Requisito en `.env`:
+
+```env
+OPENAI_API_KEY=your_key_here
+EMBEDDING_MODEL=text-embedding-3-small
+```
+
+Invocar el endpoint con el sample de 15 presupuestos:
+
+```bash
+curl -s -X POST http://localhost:8000/api/v1/embeddings/ingest \
+  -H 'Content-Type: application/json' \
+  -d "{\"budgets\":$(cat data/budgets_sample.json)}" | jq '.stats'
+```
+
+Salida esperada: `total_budgets=15`, `total_chunks` igual al número de
+componentes, `total_tokens > 0` y `estimated_cost_usd` en céntimos.
+
+Comparar dos textos por similitud coseno fuera del contenedor:
+
+```bash
+uv run python scripts/compare.py \
+  --text-a "OAuth JWT authentication for fintech users" \
+  --text-b "Authorization service with JWT tokens for digital banking"
+```
+
+Dentro del contenedor `api`:
+
+```bash
+docker compose exec api python scripts/compare.py \
+  --text-a "OAuth JWT authentication for fintech users" \
+  --text-b "Authorization service with JWT tokens for digital banking"
+```
+
+El script calcula el coseno a mano con `math`: producto escalar dividido por las
+normas de ambos vectores.
 
 ## Ejecutar la app de Streamlit
 
