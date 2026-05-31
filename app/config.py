@@ -26,6 +26,13 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     CACHE_TTL: int = 86400
     CACHE_ENABLED: bool = True
+    EMBEDDING_MODEL: str = "text-embedding-3-small"
+    SEMANTIC_CACHE_ENABLED: bool = True
+    SEMANTIC_CACHE_THRESHOLD: float = 0.88
+    SEMANTIC_CACHE_TTL: int = 86400
+    SEMANTIC_CACHE_LOG_ONLY: bool = False
+    INPUT_GUARDRAILS_ENABLED: bool = True
+    OUTPUT_GUARDRAILS_ENABLED: bool = True
     CONVERSATION_MAX_TURNS: int = Field(default=6, ge=0)
     APP_ENV: Literal["development", "staging", "production"] = "development"
     LOG_LEVEL: Literal["DEBUG", "INFO", "WARNING", "ERROR"] = "DEBUG"

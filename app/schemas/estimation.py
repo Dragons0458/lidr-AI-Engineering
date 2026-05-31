@@ -100,3 +100,4 @@ class EstimationResponse(BaseModel):
     validation: StructureCheck | None = None
     cache_hit: bool = False
     cost_usd: float = 0.0
+    out_of_scope: bool = False

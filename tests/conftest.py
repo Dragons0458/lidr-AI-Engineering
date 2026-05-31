@@ -30,7 +30,7 @@ def client() -> TestClient:
 @pytest.fixture(autouse=True)
 def isolated_llm_wrapper(monkeypatch) -> None:
     """In-memory Redis and a wrapper with cache disabled for deterministic unit tests."""
-    from app.dependencies import get_cache, get_llm_wrapper
+    from app.dependencies import get_cache, get_llm_wrapper, get_semantic_cache
 
     redis_client = fakeredis.FakeRedis(decode_responses=True)
     cache = EstimationCache(redis_client, ttl=60)
@@ -45,12 +45,23 @@ def isolated_llm_wrapper(monkeypatch) -> None:
     )
     get_cache.cache_clear()
     get_llm_wrapper.cache_clear()
+    get_semantic_cache.cache_clear()
     monkeypatch.setattr(dependencies, "get_cache", lambda: cache)
     monkeypatch.setattr(dependencies, "get_llm_wrapper", lambda: wrapper)
+    monkeypatch.setattr(dependencies, "get_semantic_cache", lambda: None)
     # estimation_service imports get_llm_wrapper by name; patch that binding too.
     monkeypatch.setattr(
         "app.services.estimation_service.get_llm_wrapper", lambda: wrapper
     )
+    monkeypatch.setattr(
+        "app.services.estimation_service.get_semantic_cache", lambda: None
+    )
+    monkeypatch.setattr("app.services.estimation_service.get_cache", lambda: cache)
+    monkeypatch.setattr(
+        "app.services.estimation_service.settings.INPUT_GUARDRAILS_ENABLED",
+        False,
+    )
     yield
     get_cache.cache_clear()
     get_llm_wrapper.cache_clear()
+    get_semantic_cache.cache_clear()

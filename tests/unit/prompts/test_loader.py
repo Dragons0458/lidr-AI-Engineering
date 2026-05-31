@@ -103,17 +103,16 @@ def test_render_estimation_prompt_v2_contains_risk_aware_sections() -> None:
     assert "<project_description><![CDATA[" in user_prompt
 
 
-def test_system_prompt_requires_preliminary_estimate_for_weak_input() -> None:
+def test_system_prompt_rejects_out_of_scope_weak_input() -> None:
     request = _build_request(description="Estimar el proyecto.")
 
     v1_system_prompt, _ = render_estimation_prompt(request, version="v1")
     v2_system_prompt, _ = render_estimation_prompt(request, version="v2")
 
-    assert "Do not answer only that the request is too vague or ambiguous." in (
-        v1_system_prompt
-    )
-    assert "preliminary discovery/MVP estimate" in v1_system_prompt
-    assert "preliminary discovery/MVP estimate" in v2_system_prompt
+    for system_prompt in (v1_system_prompt, v2_system_prompt):
+        assert "<scope>" in system_prompt
+        assert "Out of scope:" in system_prompt
+        assert "preliminary discovery/MVP estimate" not in system_prompt
 
 
 def test_system_prompt_renders_reference_projects_when_present() -> None:

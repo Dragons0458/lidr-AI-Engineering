@@ -6,13 +6,16 @@ from typing import Literal
 import structlog
 
 from app.config import get_settings
-from app.dependencies import get_llm_wrapper
+from app.dependencies import get_cache, get_llm_wrapper, get_semantic_cache
 from app.errors.llm_error import LLMServiceError
+from app.guardrails.input import check_input
+from app.guardrails.output import enforce_output
 from app.prompts.loader import (
     render_estimation_prompt,
     render_requirements_extraction_prompt,
 )
 from app.schemas.estimation import EstimationRequest, PreprocessingMode, TokenUsage
+from app.services.cache import EstimationCache
 from app.services.sessions import ProjectMetadata
 
 settings = get_settings()
@@ -34,6 +37,20 @@ class EstimationGenerationResult:
     extracted_requirements: str | None = None
     preprocessing_input_tokens: int = 0
     preprocessing_output_tokens: int = 0
+    out_of_scope: bool = False
+
+
+def _attachments_text(request: EstimationRequest) -> list[str]:
+    return [attachment.content for attachment in request.attachments or []]
+
+
+def _run_input_guardrails(request: EstimationRequest) -> None:
+    if not settings.INPUT_GUARDRAILS_ENABLED:
+        return
+    check_input(
+        request.description,
+        attachments_text=_attachments_text(request),
+    )
 
 
 def _build_messages(
@@ -84,6 +101,73 @@ def extract_requirements(
     )
 
 
+def _result_from_cached(
+    cached: dict,
+    *,
+    latency_ms: int,
+    preprocessing: PreprocessingMode,
+    extracted_requirements: str | None,
+    preprocessing_usage: TokenUsage,
+) -> EstimationGenerationResult:
+    usage = cached.get("usage") or {}
+    prep_in = preprocessing_usage.input_tokens or 0
+    prep_out = preprocessing_usage.output_tokens or 0
+    return EstimationGenerationResult(
+        estimation=cached.get("estimation", ""),
+        model=cached.get("model", settings.PRIMARY_MODEL),
+        provider=cached.get("provider", "unknown"),
+        latency_ms=latency_ms,
+        preprocessing=preprocessing,
+        extracted_requirements=extracted_requirements,
+        input_tokens=usage.get("input_tokens"),
+        output_tokens=usage.get("output_tokens"),
+        preprocessing_input_tokens=prep_in,
+        preprocessing_output_tokens=prep_out,
+        finish_reason=cached.get("finish_reason"),
+        cache_hit=True,
+        cost_usd=float(cached.get("cost_usd", 0.0)),
+    )
+
+
+def _apply_output_guardrail(
+    result: EstimationGenerationResult,
+) -> EstimationGenerationResult:
+    if not settings.OUTPUT_GUARDRAILS_ENABLED:
+        return result
+
+    guarded = enforce_output(result.estimation)
+    return EstimationGenerationResult(
+        estimation=guarded.text,
+        model=result.model,
+        provider=result.provider,
+        latency_ms=result.latency_ms,
+        preprocessing=result.preprocessing,
+        extracted_requirements=result.extracted_requirements,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        preprocessing_input_tokens=result.preprocessing_input_tokens,
+        preprocessing_output_tokens=result.preprocessing_output_tokens,
+        finish_reason=result.finish_reason,
+        cache_hit=result.cache_hit,
+        cost_usd=result.cost_usd,
+        out_of_scope=guarded.out_of_scope,
+    )
+
+
+def _semantic_payload(result: EstimationGenerationResult) -> dict:
+    return {
+        "estimation": result.estimation,
+        "model": result.model,
+        "provider": result.provider,
+        "usage": {
+            "input_tokens": result.input_tokens,
+            "output_tokens": result.output_tokens,
+        },
+        "cost_usd": result.cost_usd,
+        "finish_reason": result.finish_reason,
+    }
+
+
 def generate_estimation(
     request: EstimationRequest,
     prompt_version: Literal["v1", "v2"] = "v1",
@@ -93,6 +177,8 @@ def generate_estimation(
     use_cache: bool = True,
 ) -> EstimationGenerationResult:
     """Generate an estimation for a software development project."""
+    _run_input_guardrails(request)
+
     started_at = time.perf_counter()
     model = request.model or settings.PRIMARY_MODEL
     extracted_requirements: str | None = None
@@ -126,15 +212,63 @@ def generate_estimation(
         use_cache=use_cache,
     )
 
+    cache_key = EstimationCache.make_key(
+        messages=messages,
+        model=model,
+        max_tokens=request.max_tokens,
+        thinking_budget=request.thinking_budget,
+    )
+
+    if use_cache and settings.CACHE_ENABLED:
+        cached = get_cache().get(cache_key)
+        if cached:
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            result = _apply_output_guardrail(
+                _result_from_cached(
+                    cached,
+                    latency_ms=latency_ms,
+                    preprocessing=request.preprocessing,
+                    extracted_requirements=extracted_requirements,
+                    preprocessing_usage=preprocessing_usage,
+                )
+            )
+            log.info(
+                "exact_cache_hit",
+                latency_ms=latency_ms,
+                out_of_scope=result.out_of_scope,
+            )
+            return result
+
+    semantic_cache = get_semantic_cache()
+    if use_cache and semantic_cache is not None:
+        semantic_hit = semantic_cache.lookup(effective_request, prompt_version)
+        if semantic_hit:
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            result = _apply_output_guardrail(
+                _result_from_cached(
+                    semantic_hit,
+                    latency_ms=latency_ms,
+                    preprocessing=request.preprocessing,
+                    extracted_requirements=extracted_requirements,
+                    preprocessing_usage=preprocessing_usage,
+                )
+            )
+            log.info(
+                "semantic_cache_hit",
+                latency_ms=latency_ms,
+                out_of_scope=result.out_of_scope,
+            )
+            return result
+
     try:
-        result = get_llm_wrapper().complete(
+        result_dict = get_llm_wrapper().complete(
             messages=messages,
             model=model,
             max_tokens=request.max_tokens,
             thinking_budget=request.thinking_budget,
             use_cache=use_cache,
         )
-        usage = result["usage"]
+        usage = result_dict["usage"]
         prep_in = preprocessing_usage.input_tokens or 0
         prep_out = preprocessing_usage.output_tokens or 0
         main_input = usage["input_tokens"]
@@ -143,30 +277,46 @@ def generate_estimation(
 
         log.info(
             "llm_response_received",
-            model=result["model"],
-            provider=result["provider"],
+            model=result_dict["model"],
+            provider=result_dict["provider"],
             input_tokens=main_input,
             output_tokens=main_output,
             preprocessing_input_tokens=prep_in,
             preprocessing_output_tokens=prep_out,
             latency_ms=latency_ms,
-            cache_hit=result.get("cache_hit", False),
+            cache_hit=result_dict.get("cache_hit", False),
         )
-        return EstimationGenerationResult(
-            estimation=result["estimation"],
-            model=result["model"],
-            provider=result["provider"],
-            latency_ms=latency_ms,
-            preprocessing=request.preprocessing,
-            extracted_requirements=extracted_requirements,
-            input_tokens=main_input,
-            output_tokens=main_output,
-            preprocessing_input_tokens=prep_in,
-            preprocessing_output_tokens=prep_out,
-            finish_reason=result.get("finish_reason"),
-            cache_hit=bool(result.get("cache_hit", False)),
-            cost_usd=float(result.get("cost_usd", 0.0)),
+        result = _apply_output_guardrail(
+            EstimationGenerationResult(
+                estimation=result_dict["estimation"],
+                model=result_dict["model"],
+                provider=result_dict["provider"],
+                latency_ms=latency_ms,
+                preprocessing=request.preprocessing,
+                extracted_requirements=extracted_requirements,
+                input_tokens=main_input,
+                output_tokens=main_output,
+                preprocessing_input_tokens=prep_in,
+                preprocessing_output_tokens=prep_out,
+                finish_reason=result_dict.get("finish_reason"),
+                cache_hit=bool(result_dict.get("cache_hit", False)),
+                cost_usd=float(result_dict.get("cost_usd", 0.0)),
+            )
         )
+
+        if (
+            use_cache
+            and semantic_cache is not None
+            and not result.cache_hit
+            and not result.out_of_scope
+        ):
+            semantic_cache.store(
+                effective_request,
+                _semantic_payload(result),
+                prompt_version,
+            )
+
+        return result
     except Exception as e:
         log.error("llm_call_failed", error=str(e))
         raise LLMServiceError(f"LLM call failed: {e}") from e
@@ -179,7 +329,13 @@ def generate_estimation_stream(
     *,
     use_cache: bool = True,
 ) -> Iterator[str]:
-    """Generate an estimation stream for a software project summary."""
+    """Generate an estimation stream for a software project summary.
+
+    Output guardrails (scope/PII) are not applied to streamed chunks; only the
+    blocking ``generate_estimation`` path enforces them.
+    """
+    _run_input_guardrails(request)
+
     model = request.model or settings.PRIMARY_MODEL
     effective_request = request
     if request.preprocessing == "two_phase":
@@ -201,17 +357,46 @@ def generate_estimation_stream(
         use_cache=use_cache,
     )
 
+    semantic_cache = get_semantic_cache()
+    if use_cache and semantic_cache is not None:
+        semantic_hit = semantic_cache.lookup(effective_request, prompt_version)
+        if semantic_hit:
+            estimation = semantic_hit.get("estimation", "")
+            if estimation:
+                log.info("semantic_cache_stream_hit")
+                yield estimation
+                return
+
+    collected: list[str] = []
     try:
-        yield from get_llm_wrapper().complete_stream(
+        for chunk in get_llm_wrapper().complete_stream(
             messages=messages,
             model=model,
             max_tokens=request.max_tokens,
             thinking_budget=request.thinking_budget,
             use_cache=use_cache,
-        )
+        ):
+            collected.append(chunk)
+            yield chunk
     except Exception as e:
         log.error("llm_stream_call_failed", error=str(e))
         raise LLMServiceError(f"LLM stream call failed: {e}") from e
+
+    if use_cache and semantic_cache is not None and collected:
+        rendered = "".join(collected)
+        if not rendered.strip().startswith("Out of scope:"):
+            semantic_cache.store(
+                effective_request,
+                {
+                    "estimation": rendered,
+                    "model": model,
+                    "provider": "unknown",
+                    "usage": {"input_tokens": 0, "output_tokens": 0},
+                    "cost_usd": 0.0,
+                    "finish_reason": "stop",
+                },
+                prompt_version,
+            )
 
 
 def _resolve_messages(

@@ -42,4 +42,5 @@ def format_response(
         extracted_requirements=response.extracted_requirements,
         cache_hit=response.cache_hit,
         cost_usd=cost_usd,
+        out_of_scope=response.out_of_scope,
     )

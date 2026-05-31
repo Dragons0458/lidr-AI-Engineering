@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from pydantic import TypeAdapter, ValidationError
 
 from app.errors.llm_error import LLMServiceError
+from app.guardrails.input import InputGuardrailViolation
 from app.formatters.llm_formatters import format_response
 from app.schemas.estimation import (
     DetailLevel,
@@ -126,7 +127,7 @@ async def estimate_session(
             ),
             prompt_version=prompt_version,
         )
-        if request.evaluate:
+        if request.evaluate and not response.out_of_scope:
             response.validation = evaluate_estimation_structure(
                 response.estimation,
                 response.finish_reason,
@@ -138,6 +139,11 @@ async def estimate_session(
             llm_response=response.estimation,
         )
         response.project_metadata = session.metadata.model_dump()
+    except InputGuardrailViolation as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"reason": e.reason, "message": e.message},
+        ) from e
     except AttachmentTextExtractionError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except UnsupportedAttachmentTypeError as e:

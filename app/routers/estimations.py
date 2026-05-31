@@ -9,6 +9,7 @@ from sse_starlette.sse import EventSourceResponse
 from app.config import get_settings
 from app.errors.llm_error import LLMServiceError
 from app.formatters.llm_formatters import format_response
+from app.guardrails.input import InputGuardrailViolation, check_input
 from app.schemas.estimation import EstimationRequest, EstimationResponse
 from app.services.estimation_service import (
     generate_estimation,
@@ -34,13 +35,18 @@ async def estimate(
             generate_estimation(request, prompt_version=prompt_version),
             prompt_version=prompt_version,
         )
-        if request.evaluate:
+        if request.evaluate and not response.out_of_scope:
             response.validation = evaluate_estimation_structure(
                 response.estimation,
                 response.finish_reason,
                 request.output_format,
             )
         return response
+    except InputGuardrailViolation as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"reason": e.reason, "message": e.message},
+        ) from e
     except LLMServiceError as e:
         log.error("estimation_endpoint_error", error=str(e))
         raise HTTPException(status_code=500, detail=str(e)) from e
@@ -54,6 +60,20 @@ async def estimate_stream(
     """Stream estimation text via Server-Sent Events (token / done / error)."""
 
     model = request.model or settings.PRIMARY_MODEL
+
+    if settings.INPUT_GUARDRAILS_ENABLED:
+        try:
+            check_input(
+                request.description,
+                attachments_text=[
+                    attachment.content for attachment in request.attachments or []
+                ],
+            )
+        except InputGuardrailViolation as e:
+            raise HTTPException(
+                status_code=400,
+                detail={"reason": e.reason, "message": e.message},
+            ) from e
 
     async def event_generator() -> AsyncIterator[dict]:
         loop = asyncio.get_running_loop()
