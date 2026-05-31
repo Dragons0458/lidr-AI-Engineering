@@ -94,8 +94,10 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Output guardrails (rechazo de scope con `Out of scope:` y redacción PII en respuestas).
 - Fallback opcional de modelo (LiteLLM Router).
 - Campos `cache_hit`, `cost_usd` y `out_of_scope` en la respuesta de estimación.
-- Versionado de prompts (`v1`, `v2`) con plantillas Jinja.
+- Versionado de prompts (`v1`, `v2`, `v3` estructurado) con plantillas Jinja.
 - Memoria de sesión con `<project_metadata>` inyectado en el system prompt.
+- **Sesión 5** (opt-in vía `.env`): tier resolver, compresión de memoria (anclas + resumen) y
+  Actor-Critic-Boss con `EstimationResult` estructurado (`POST .../estimate-acb`).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - Interfaz de Streamlit para pruebas interactivas y uso demostrativo.
@@ -215,6 +217,8 @@ Endpoints locales predeterminados:
 - `GET /health`
 - `POST /sessions`
 - `POST /sessions/{session_id}/estimate`
+- `POST /sessions/{session_id}/estimate-acb` (salida estructurada + traza ACB)
+- `GET /sessions/{session_id}` (debug: anclas, resumen, tier)
 - `POST /api/v1/estimate`
 - `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
 
@@ -502,6 +506,32 @@ Resultado esperado de la suite relevante:
 }
 ```
 
+### Sesión 5: tier, compresión de memoria y ACB
+
+Todas las flags están **desactivadas por defecto**; con valores por defecto el comportamiento
+de `/estimate` y `/sessions/{id}/estimate` es el mismo que antes.
+
+| Variable | Default | Efecto |
+|----------|---------|--------|
+| `TIER_RESOLUTION_ENABLED` | `false` | Resuelve audiencia (`executive` / `pm` / `developer` / `default`) y expone `last_resolved_tier` en `GET /sessions/{id}`. |
+| `MEMORY_COMPRESSION_ENABLED` | `false` | Promueve anclas y resume turnos evictados; sin flag se aplica recorte clásico (`CONVERSATION_MAX_TURNS`). |
+| `ANCHOR_DETECTION_MODE` | `heuristic` | `heuristic` o `llm` para detectar mensajes ancla. |
+| `COMPRESSION_MODEL` | vacío | Modelo para resumen; vacío → `PRIMARY_MODEL`. |
+| `CRITIC_MODEL` | vacío | Modelo del crítico; vacío → `PRIMARY_MODEL`. |
+| `BOSS_MAX_ITERATIONS` | `3` | Iteraciones máximas Actor→Critic→Boss. |
+
+```bash
+# ACB (endpoint dedicado; el cliente elige cuándo llamarlo)
+curl -X POST "http://localhost:8000/api/v1/sessions/{session_id}/estimate-acb" \
+  -F "description=Portal SaaS con login OAuth y reportes..." \
+  -F "tier=developer"
+
+# Debug de sesión (anclas, resumen, tier)
+curl "http://localhost:8000/api/v1/sessions/{session_id}"
+```
+
+Streamlit (`streamlit_app.py`): selector de tier, toggle ACB, panel de traza y tabla de fases.
+
 ### Guardrails y caché semántico (Sesión 4)
 
 **Input** (HTTP 400 con `{"reason", "message"}`):
@@ -545,6 +575,8 @@ guardrails sobre los chunks (limitación documentada).
 - `v1`: instrucciones clásicas de estimación con salidas de planificación concisas.
 - `v2`: estilo de planificación consciente de riesgos; incluye guía de horas de colchón y mayor énfasis en
   riesgos/dependencias.
+- `v3`: salida estructurada `EstimationResult` (fases con base/buffer hours, totales validados) para ACB;
+  incluye bloque `<audience>` según tier.
 
 ## Flujo de commit con linters
 
