@@ -6,6 +6,7 @@ from redisvl.utils.vectorize import OpenAITextVectorizer
 
 from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
+from app.embedding_pipeline.embedder import OpenAIEmbedder
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
@@ -61,6 +62,17 @@ def get_semantic_cache() -> EstimationSemanticCache | None:
     except Exception as exc:
         log.warning("semantic_cache_init_failed", error=str(exc))
         return None
+
+
+@lru_cache
+def get_embedder() -> OpenAIEmbedder:
+    settings = get_settings()
+    if not settings.OPENAI_API_KEY:
+        raise RuntimeError("OPENAI_API_KEY is required for embeddings")
+    return OpenAIEmbedder(
+        api_key=settings.OPENAI_API_KEY,
+        model=settings.EMBEDDING_MODEL,
+    )
 
 
 def build_pseudonymizer(session):
