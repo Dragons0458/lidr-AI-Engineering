@@ -32,6 +32,8 @@ class EstimationGenerationResult:
     extracted_requirements: str | None = None
     input_tokens: int | None = None
     output_tokens: int | None = None
+    preprocessing_input_tokens: int = 0
+    preprocessing_output_tokens: int = 0
     finish_reason: str | None = None
 
 
@@ -65,7 +67,7 @@ def extract_requirements(
             model=model,
             messages=messages,
             max_tokens=max_tokens,
-            reasoning_effort="none",
+            thinking_budget=None,
         )
     except Exception as e:
         log.error(
@@ -129,19 +131,21 @@ def generate_estimation(
             model=model,
             messages=messages,
             max_tokens=request.max_tokens,
-            reasoning_effort="none",
+            thinking_budget=request.thinking_budget,
         )
         main_input_tokens, main_output_tokens = _response_usage(response)
-        input_tokens = (preprocessing_usage.input_tokens or 0) + main_input_tokens
-        output_tokens = (preprocessing_usage.output_tokens or 0) + main_output_tokens
+        prep_in = preprocessing_usage.input_tokens or 0
+        prep_out = preprocessing_usage.output_tokens or 0
         latency_ms = int((time.perf_counter() - started_at) * 1000)
 
         log.info(
             "llm_response_received",
             provider=settings.LLM_PROVIDER,
             model=model,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=main_input_tokens,
+            output_tokens=main_output_tokens,
+            preprocessing_input_tokens=prep_in,
+            preprocessing_output_tokens=prep_out,
             latency_ms=latency_ms,
         )
         return EstimationGenerationResult(
@@ -150,8 +154,10 @@ def generate_estimation(
             latency_ms=latency_ms,
             preprocessing=request.preprocessing,
             extracted_requirements=extracted_requirements,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            input_tokens=main_input_tokens,
+            output_tokens=main_output_tokens,
+            preprocessing_input_tokens=prep_in,
+            preprocessing_output_tokens=prep_out,
             finish_reason=_finish_reason(response),
         )
     except Exception as e:
@@ -194,7 +200,7 @@ def generate_estimation_stream(
             model=model,
             messages=messages,
             max_tokens=request.max_tokens,
-            reasoning_effort="none",
+            thinking_budget=request.thinking_budget,
             stream=True,
         )
 
@@ -232,8 +238,38 @@ def _resolve_messages(
     return resolved_messages
 
 
-def _call_completion(**kwargs):
-    return completion(**kwargs)
+def _call_completion(
+    *,
+    model: str,
+    messages: list[dict[str, str]],
+    max_tokens: int,
+    thinking_budget: int | None = None,
+    stream: bool = False,
+):
+    call_kwargs: dict = {
+        "model": model,
+        "messages": messages,
+        "max_tokens": max_tokens,
+    }
+    if stream:
+        call_kwargs["stream"] = True
+
+    if thinking_budget is not None and settings.LLM_PROVIDER == "anthropic":
+        call_kwargs["thinking"] = {
+            "type": "enabled",
+            "budget_tokens": thinking_budget,
+        }
+        call_kwargs["max_tokens"] = max(max_tokens, thinking_budget + 1024)
+    else:
+        if thinking_budget is not None:
+            log.warning(
+                "thinking_budget_ignored_for_provider",
+                provider=settings.LLM_PROVIDER,
+                model=model,
+            )
+        call_kwargs["reasoning_effort"] = "none"
+
+    return completion(**call_kwargs)
 
 
 def _response_usage(

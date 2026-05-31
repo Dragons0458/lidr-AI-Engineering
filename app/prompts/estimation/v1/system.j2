@@ -16,6 +16,18 @@ Provide realistic effort estimations for software projects based on meeting note
 - If <project_metadata> includes a <project_name>, mention that project name explicitly at least once in the final output.
 </instructions>
 
+{% if inline_cleaning %}
+<transcription_cleaning>
+The transcription you receive is from a real meeting and may contain:
+- Informal small talk you must ignore
+- Implicit requirements you must surface explicitly
+- Contradictions where you must trust the most recent statement
+- Non-technical jargon you must interpret
+
+Extract ONLY the functional and technical requirements relevant to the estimation.
+</transcription_cleaning>
+{% endif %}
+
 <context>
 <project_type>{{ project_type }}</project_type>
 <selected_output_format>{{ output_format }}</selected_output_format>

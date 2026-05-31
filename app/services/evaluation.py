@@ -14,8 +14,17 @@ _TOTAL_HOURS_RE = re.compile(
     r"Total\s+(?:estimated|planned)?\s*hours\s*[:* ]+\s*([\d.,]+)\s*h?",
     re.IGNORECASE,
 )
+_TOTAL_COST_RE = re.compile(
+    r"Total\s+cost\s*[:* ]+\s*([\d.,]+)\s*(?:EUR)?",
+    re.IGNORECASE,
+)
 _SPANISH_TOTAL_RE = re.compile(
     r"Total\s+estimado\s*[:* ]+\s*([\d.,]+)\s*horas?", re.IGNORECASE
+)
+_COST_COLUMN_HEADER_RE = re.compile(r"\|\s*Cost", re.IGNORECASE)
+_COST_TABLE_ROW_RE = re.compile(
+    r"^\|\s*(?P<task>[^|]+?)\s*\|\s*(?P<hours>[\d.,]+)\s*\|\s*(?P<cost>[\d.,\sEURer]+)\s*\|\s*$",
+    re.MULTILINE,
 )
 
 
@@ -32,6 +41,9 @@ def evaluate_estimation_structure(
     declared_total_hours = _extract_declared_total_hours(normalized_text)
     sum_row_hours = _sum_table_hours(normalized_text, output_format)
     hours_match = _hours_match(sum_row_hours, declared_total_hours)
+    declared_total_cost = _extract_declared_total_cost(normalized_text)
+    sum_row_cost = _sum_table_costs(normalized_text)
+    cost_match = _cost_match(sum_row_cost, declared_total_cost)
     has_totals_section = declared_total_hours is not None or _has_total_table_row(
         normalized_text
     )
@@ -75,6 +87,9 @@ def evaluate_estimation_structure(
         declared_total_hours=declared_total_hours,
         sum_row_hours=sum_row_hours,
         hours_match=hours_match,
+        declared_total_cost=declared_total_cost,
+        sum_row_cost=sum_row_cost,
+        cost_match=cost_match,
         finish_reason=finish_reason,
         finish_reason_ok=finish_reason_ok,
     )
@@ -88,6 +103,9 @@ def evaluate_estimation_structure(
         declared_total_hours=declared_total_hours,
         sum_row_hours=sum_row_hours,
         hours_match=hours_match,
+        declared_total_cost=declared_total_cost,
+        sum_row_cost=sum_row_cost,
+        cost_match=cost_match,
         finish_reason_ok=finish_reason_ok,
         score=score,
         issues=issues,
@@ -174,6 +192,40 @@ def _hours_match(
     return abs(sum_row_hours - declared_total_hours) <= 1
 
 
+def _extract_declared_total_cost(text: str) -> float | None:
+    match = _TOTAL_COST_RE.search(text)
+    if not match:
+        return None
+    return _to_float(match.group(1))
+
+
+def _sum_table_costs(text: str) -> float | None:
+    if not _COST_COLUMN_HEADER_RE.search(text):
+        return None
+
+    running_total = 0.0
+    row_count = 0
+    for match in _COST_TABLE_ROW_RE.finditer(text):
+        task = match.group("task").strip().lower()
+        if task in {"task", ""} or re.fullmatch(r"[-: ]+", task):
+            continue
+        cost = _to_float(match.group("cost"))
+        if cost is None:
+            continue
+        running_total += cost
+        row_count += 1
+
+    return running_total if row_count else None
+
+
+def _cost_match(
+    sum_row_cost: float | None, declared_total_cost: float | None
+) -> bool | None:
+    if sum_row_cost is None or declared_total_cost is None or declared_total_cost <= 0:
+        return None
+    return abs(sum_row_cost - declared_total_cost) / declared_total_cost <= 0.02
+
+
 def _applicable_checks(
     *,
     output_format: OutputFormat,
@@ -216,6 +268,9 @@ def _build_issues(
     declared_total_hours: int | None,
     sum_row_hours: int | None,
     hours_match: bool | None,
+    declared_total_cost: float | None,
+    sum_row_cost: float | None,
+    cost_match: bool | None,
     finish_reason: str | None,
     finish_reason_ok: bool,
 ) -> list[str]:
@@ -235,6 +290,11 @@ def _build_issues(
             "Total hours mismatch: "
             f"declared {declared_total_hours} vs sum of rows {sum_row_hours}"
         )
+    if cost_match is False:
+        issues.append(
+            "Total cost mismatch: "
+            f"declared {declared_total_cost} EUR vs sum of rows {sum_row_cost} EUR"
+        )
     if not finish_reason_ok:
         issues.append(
             f"Response truncated or unexpected finish_reason='{finish_reason}'"
@@ -248,3 +308,17 @@ def _to_int(raw: str) -> int | None:
         cleaned = cleaned.rsplit("=", maxsplit=1)[-1]
     digits = re.sub(r"[^\d]", "", cleaned)
     return int(digits) if digits else None
+
+
+def _to_float(raw: str) -> float | None:
+    cleaned = raw.strip()
+    if "=" in cleaned:
+        cleaned = cleaned.rsplit("=", maxsplit=1)[-1]
+    normalized = cleaned.replace(",", ".")
+    number_match = re.search(r"[\d.]+", normalized)
+    if not number_match:
+        return None
+    try:
+        return float(number_match.group(0))
+    except ValueError:
+        return None

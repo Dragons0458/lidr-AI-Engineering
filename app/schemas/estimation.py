@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 from app.schemas.attachments import AttachmentText
 
-PreprocessingMode = Literal["none", "two_phase"]
+PreprocessingMode = Literal["none", "inline_cleaning", "two_phase"]
 ExampleFormat = Literal["markdown", "json", "narrative"]
 
 
@@ -55,6 +55,7 @@ class EstimationRequest(BaseModel):
     example_format: ExampleFormat = "markdown"
     model: str | None = None
     max_tokens: int = Field(default=4000, ge=256, le=16000)
+    thinking_budget: int | None = Field(default=None, ge=0, le=16000)
     evaluate: bool = True
 
 
@@ -62,6 +63,8 @@ class TokenUsage(BaseModel):
     tokens_used: Optional[int] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    preprocessing_input_tokens: int = 0
+    preprocessing_output_tokens: int = 0
     cost_estimate: Optional[float] = None
 
 
@@ -74,6 +77,9 @@ class StructureCheck(BaseModel):
     declared_total_hours: int | None = None
     sum_row_hours: int | None = None
     hours_match: bool | None = None
+    declared_total_cost: float | None = None
+    sum_row_cost: float | None = None
+    cost_match: bool | None = None
     finish_reason_ok: bool
     score: float
     issues: list[str] = Field(default_factory=list)

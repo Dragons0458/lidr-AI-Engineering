@@ -49,6 +49,7 @@ def render_estimation_prompt(
         "detail_level": request.detail_level.value,
         "output_format": request.output_format.value,
         "description": request.description,
+        "inline_cleaning": request.preprocessing == "inline_cleaning",
         "attachments": request.attachments or [],
         "project_metadata": format_project_metadata_for_prompt(project_metadata),
         "examples": build_prompt_examples(

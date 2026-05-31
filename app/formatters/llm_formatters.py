@@ -22,23 +22,29 @@ def format_response(
     )
     model_response = generation_result.response if generation_result else response
     model = generation_result.model if generation_result else settings.LLM_MODEL
-    input_tokens = (
+    main_input_tokens = (
         generation_result.input_tokens
         if generation_result and generation_result.input_tokens is not None
         else model_response.usage.prompt_tokens
     )
-    output_tokens = (
+    main_output_tokens = (
         generation_result.output_tokens
         if generation_result and generation_result.output_tokens is not None
         else model_response.usage.completion_tokens
     )
+    prep_in = generation_result.preprocessing_input_tokens if generation_result else 0
+    prep_out = generation_result.preprocessing_output_tokens if generation_result else 0
     finish_reason = (
         generation_result.finish_reason
         if generation_result
         else getattr(model_response.choices[0], "finish_reason", None)
     )
 
-    cost = calculate_cost(model, input_tokens, output_tokens)
+    cost = calculate_cost(
+        model,
+        main_input_tokens + prep_in,
+        main_output_tokens + prep_out,
+    )
 
     return EstimationResponse(
         estimation=model_response.choices[0].message.content or "",
@@ -48,9 +54,11 @@ def format_response(
         prompt_version=prompt_version,
         usage=TokenUsage(
             cost_estimate=cost.get("total") if cost else None,
-            tokens_used=input_tokens + output_tokens,
-            input_tokens=input_tokens,
-            output_tokens=output_tokens,
+            tokens_used=main_input_tokens + main_output_tokens + prep_in + prep_out,
+            input_tokens=main_input_tokens,
+            output_tokens=main_output_tokens,
+            preprocessing_input_tokens=prep_in,
+            preprocessing_output_tokens=prep_out,
         ),
         latency_ms=generation_result.latency_ms if generation_result else 0,
         finish_reason=finish_reason,

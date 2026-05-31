@@ -90,6 +90,66 @@ def test_empty_text_scores_zero() -> None:
     assert result.issues
 
 
+def test_cost_fields_none_without_cost_column() -> None:
+    text = """## Estimacion: Portal
+
+| Phase | Tasks | Hours | Team |
+|---|---|---:|---|
+| Backend | API | 40 | Backend Engineer |
+
+Total estimated hours: 40h
+Equipo recomendado: Backend Engineer
+Duracion estimada: 3 semanas
+"""
+
+    result = evaluate_estimation_structure(text, "stop", OutputFormat.PHASES_TABLE)
+
+    assert result.declared_total_cost is None
+    assert result.sum_row_cost is None
+    assert result.cost_match is None
+
+
+def test_cost_match_with_task_hours_cost_table() -> None:
+    text = """## Estimacion: API MVP
+
+| Task | Hours | Cost (EUR) |
+|---|---|---:|
+| Setup | 10 | 500 |
+| API work | 20 | 1250 |
+
+Total hours: 30
+Total cost: 1750 EUR
+Recommended Team: 1 backend engineer
+Estimated Duration: 2 weeks
+"""
+
+    result = evaluate_estimation_structure(text, "stop", OutputFormat.LINE_ITEMS)
+
+    assert result.declared_total_cost == 1750.0
+    assert result.sum_row_cost == 1750.0
+    assert result.cost_match is True
+
+
+def test_flags_cost_mismatch() -> None:
+    text = """## Estimacion: API MVP
+
+| Task | Hours | Cost (EUR) |
+|---|---|---:|
+| Setup | 10 | 500 |
+| API work | 20 | 1250 |
+
+Total hours: 30
+Total cost: 2000 EUR
+Recommended Team: 1 backend engineer
+Estimated Duration: 2 weeks
+"""
+
+    result = evaluate_estimation_structure(text, "stop", OutputFormat.LINE_ITEMS)
+
+    assert result.cost_match is False
+    assert any("Total cost mismatch" in issue for issue in result.issues)
+
+
 def test_narrative_uses_laxer_checks() -> None:
     text = (
         "Scope summary: Plataforma interna de reportes.\n"

@@ -22,3 +22,6 @@ wheels/
 # Stress-test generated fixtures
 evals/stress/fixtures/attach_*.pdf
 evals/stress/results_smoke.csv
+
+# Session planning docs (course alignment)
+planning/

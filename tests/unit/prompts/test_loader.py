@@ -26,6 +26,15 @@ def _build_request(
     )
 
 
+def test_inline_cleaning_flag_renders_transcription_cleaning_block() -> None:
+    request = _build_request().model_copy(update={"preprocessing": "inline_cleaning"})
+
+    system_prompt, _ = render_estimation_prompt(request, version="v1")
+
+    assert "<transcription_cleaning>" in system_prompt
+    assert "Extract ONLY the functional and technical requirements" in system_prompt
+
+
 def test_user_prompt_includes_literal_project_description_inside_project_description_tag() -> (
     None
 ):
