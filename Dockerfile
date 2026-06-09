@@ -32,7 +32,7 @@ COPY alembic/ /app/alembic/
 COPY alembic.ini /app/alembic.ini
 COPY data/ /app/data/
 COPY scripts/ /app/scripts/
-COPY streamlit_app.py /app/streamlit_app.py
+COPY streamlit_ui/ /app/streamlit_ui/
 
 RUN chown -R appuser:appgroup /app
 

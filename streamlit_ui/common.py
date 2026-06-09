@@ -4,11 +4,19 @@ from __future__ import annotations
 
 import json
 import os
+from pathlib import Path
 from typing import Any
 
 import httpx
+import streamlit as st
+from dotenv import load_dotenv
+from streamlit.errors import StreamlitSecretNotFoundError
 
 MIN_DESCRIPTION_CHARS = 10
+DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+load_dotenv(_PROJECT_ROOT / ".env")
 
 _GUARDRAIL_LABELS: dict[str, str] = {
     "moderation": "Moderación de contenido",
@@ -20,6 +28,35 @@ _GUARDRAIL_LABELS: dict[str, str] = {
 def env_display(key: str, default: str = "—") -> str:
     value = os.getenv(key, "").strip()
     return value if value else default
+
+
+def get_api_base_url() -> str:
+    env_url = os.getenv("ESTIMATION_API_BASE_URL", DEFAULT_API_BASE_URL)
+    try:
+        return str(st.secrets.get("ESTIMATION_API_BASE_URL", env_url))
+    except StreamlitSecretNotFoundError:
+        return env_url
+
+
+def get_api_root_url(base_url: str | None = None) -> str:
+    """Strip ``/api/v1`` suffix for endpoints mounted at the API root (e.g. /embeddings)."""
+    base = (base_url or get_api_base_url()).rstrip("/")
+    if base.endswith("/api/v1"):
+        return base.rsplit("/api/v1", 1)[0]
+    return base
+
+
+@st.cache_data(ttl=15)
+def fetch_effective_primary_model(api_base_url: str) -> str | None:
+    try:
+        response = httpx.get(
+            f"{api_base_url.rstrip('/')}/config/models",
+            timeout=5.0,
+        )
+        response.raise_for_status()
+        return response.json()["models"]["PRIMARY_MODEL"]["effective"]
+    except (httpx.HTTPError, KeyError, TypeError):
+        return None
 
 
 def parse_error_detail(response: httpx.Response) -> str:

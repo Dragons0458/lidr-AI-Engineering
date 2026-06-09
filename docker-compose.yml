@@ -72,19 +72,23 @@ services:
     env_file:
       - .env
     environment:
+      PYTHONPATH: /app
       ESTIMATION_API_BASE_URL: http://api:8000/api/v1
+      STREAMLIT_DB_PATH: /app/streamlit_ui/data/frontend.db
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql+psycopg://estimator:estimator@postgres:5432/estimator
     command:
       [
         "streamlit",
         "run",
-        "streamlit_app.py",
+        "streamlit_ui/home.py",
         "--server.address=0.0.0.0",
         "--server.port=8501",
       ]
     ports:
       - "8501:8501"
+    volumes:
+      - ./streamlit_ui:/app/streamlit_ui
     depends_on:
       api:
         condition: service_healthy

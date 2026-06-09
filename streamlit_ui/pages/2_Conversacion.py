@@ -1,34 +1,41 @@
 import json
-import os
+import runpy
 from pathlib import Path
 from streamlit.runtime.uploaded_file_manager import UploadedFile
 import time
 
+runpy.run_path(str(Path(__file__).resolve().parent.parent / "path_setup.py"))
+
 import httpx
 import streamlit as st
-from dotenv import load_dotenv
-from streamlit.errors import StreamlitSecretNotFoundError
 
-from app.schemas.acb import ACBResponse
-from app.schemas.estimation import (
+from app.domain.schemas.acb import ACBResponse
+from app.domain.schemas.estimation import (
     DetailLevel,
     EstimationResponse,
     OutputFormat,
     ProjectType,
     ReferenceProject,
 )
-from streamlit_common import (
+from streamlit_ui.common import (
     env_display,
     format_api_error,
+    get_api_base_url,
     render_structured_phases,
     resolve_sidebar_model,
+)
+from streamlit_ui.store import (
+    get_chat_session,
+    list_chat_sessions,
+    list_estimations,
+    save_estimation,
+    upsert_chat_session,
 )
 
 TIER_OPTIONS = ["auto", "executive", "pm", "developer", "default"]
 
-load_dotenv(Path(__file__).resolve().parent / ".env")
+st.set_page_config(page_title="Conversación", page_icon="💬", layout="wide")
 
-DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
 REFERENCE_PROJECT_FIELDS = ("name", "summary", "estimated_hours", "team", "outcome")
 
 
@@ -45,14 +52,6 @@ def empty_project_metadata() -> dict[str, object]:
         "excluded_technologies": [],
         "agreed_scope": None,
     }
-
-
-def get_api_base_url() -> str:
-    env_url = os.getenv("ESTIMATION_API_BASE_URL", DEFAULT_API_BASE_URL)
-    try:
-        return str(st.secrets.get("ESTIMATION_API_BASE_URL", env_url))
-    except StreamlitSecretNotFoundError:
-        return env_url
 
 
 def build_sessions_url() -> str:
@@ -132,8 +131,45 @@ def create_session() -> str:
     return str(response.json()["session_id"])
 
 
+def persist_chat_session(*, remote_session_id: str) -> None:
+    turn_count = sum(
+        1
+        for message in st.session_state.get("messages", [])
+        if message["role"] == "user"
+    )
+    st.session_state.local_chat_session_id = upsert_chat_session(
+        remote_session_id=remote_session_id,
+        latest_metadata=st.session_state.get("project_metadata"),
+        turn_count=turn_count,
+        runtime_snapshot=st.session_state.get("session_debug") or {},
+    )
+
+
+def persist_estimation_turn(
+    *,
+    description: str,
+    project_type: str,
+    detail_level: str,
+    output_format: str,
+    response_json: dict,
+    prompt_version: str,
+    cached: bool,
+) -> None:
+    save_estimation(
+        description=description,
+        project_type=project_type,
+        detail_level=detail_level,
+        output_format=output_format,
+        response_payload=response_json,
+        prompt_version=prompt_version,
+        cached=cached,
+        chat_session_id=st.session_state.get("local_chat_session_id"),
+    )
+
+
 def reset_conversation_state() -> None:
     st.session_state.session_id = create_session()
+    persist_chat_session(remote_session_id=st.session_state.session_id)
     st.session_state.project_metadata = empty_project_metadata()
     st.session_state.model = "-"
     st.session_state.provider = "-"
@@ -273,11 +309,14 @@ if "last_structured_result" not in st.session_state:
     st.session_state.last_structured_result = None
 if "session_debug" not in st.session_state:
     st.session_state.session_debug = {}
+if "local_chat_session_id" not in st.session_state:
+    st.session_state.local_chat_session_id = None
 if "tier_choice" not in st.session_state:
     st.session_state.tier_choice = "auto"
 if "session_id" not in st.session_state:
     try:
         st.session_state.session_id = create_session()
+        persist_chat_session(remote_session_id=st.session_state.session_id)
     except httpx.HTTPError as exc:
         st.session_state.session_id = ""
         st.session_state.last_error = format_api_error(
@@ -287,7 +326,8 @@ if "session_id" not in st.session_state:
         st.session_state.session_id = ""
         st.session_state.last_error = f"No se pudo crear la sesión: {exc}"
 
-st.title("Estimador CAG")
+st.title("Conversación")
+st.caption("Sesiones multi-turno con memoria, adjuntos y Actor-Critic-Boss.")
 
 with st.sidebar:
     st.title("Estimaciones")
@@ -490,8 +530,9 @@ if submitted:
         )
         response.raise_for_status()
 
+        response_json = response.json()
         if use_acb:
-            acb_response = ACBResponse.model_validate(response.json())
+            acb_response = ACBResponse.model_validate(response_json)
             apply_acb_response(acb_response)
             assistant_text = acb_response.result.summary
             needs_retry = is_retryable_estimation(
@@ -499,7 +540,7 @@ if submitted:
                 out_of_scope=st.session_state.out_of_scope,
             )
         else:
-            estimation_response = EstimationResponse.model_validate(response.json())
+            estimation_response = EstimationResponse.model_validate(response_json)
             apply_estimation_response(estimation_response)
             assistant_text = estimation_response.estimation
             needs_retry = is_retryable_estimation(
@@ -507,6 +548,16 @@ if submitted:
                 out_of_scope=estimation_response.out_of_scope,
             )
         refresh_session_debug()
+        persist_chat_session(remote_session_id=st.session_state.session_id)
+        persist_estimation_turn(
+            description=transcription or user_message,
+            project_type=project_type.value,
+            detail_level=detail_level.value,
+            output_format=output_format.value,
+            response_json=response_json,
+            prompt_version=prompt_version,
+            cached=st.session_state.cache_hit,
+        )
         st.session_state.messages.append({"role": "user", "content": user_message})
         st.session_state.messages.append(
             {"role": "assistant", "content": assistant_text}
@@ -586,17 +637,28 @@ if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
         )
         response.raise_for_status()
 
+        response_json = response.json()
         if st.session_state.use_acb:
-            acb_response = ACBResponse.model_validate(response.json())
+            acb_response = ACBResponse.model_validate(response_json)
             apply_acb_response(acb_response)
             assistant_text = acb_response.result.summary
             out_of_scope = st.session_state.out_of_scope
         else:
-            estimation_response = EstimationResponse.model_validate(response.json())
+            estimation_response = EstimationResponse.model_validate(response_json)
             apply_estimation_response(estimation_response)
             assistant_text = estimation_response.estimation
             out_of_scope = estimation_response.out_of_scope
         refresh_session_debug()
+        persist_chat_session(remote_session_id=st.session_state.session_id)
+        persist_estimation_turn(
+            description=prompt,
+            project_type=project_type.value,
+            detail_level=detail_level.value,
+            output_format=output_format.value,
+            response_json=response_json,
+            prompt_version=st.session_state.prompt_version,
+            cached=st.session_state.cache_hit,
+        )
         st.session_state.messages.append(
             {"role": "assistant", "content": assistant_text}
         )
@@ -678,3 +740,43 @@ with st.sidebar:
             value=env_display("MEMORY_COMPRESSION_ENABLED", "false"),
             disabled=True,
         )
+
+st.divider()
+st.subheader("Histórico de sesiones")
+sessions = list_chat_sessions(limit=20)
+if not sessions:
+    st.caption("Aún no hay sesiones guardadas localmente.")
+else:
+    for session in sessions:
+        metadata = session.get("latest_metadata") or {}
+        project_name = metadata.get("project_name") or "(sin nombre)"
+        cols = st.columns([3, 1, 1])
+        cols[0].write(
+            f"**#{session['id']}** · `{session['remote_session_id'][:12]}…` · "
+            f"{project_name} · {session['turn_count']} turnos"
+        )
+        cols[1].caption(session.get("updated_at", "")[:19])
+        if cols[2].button("Ver", key=f"view_session_{session['id']}"):
+            st.session_state.view_session_id = session["id"]
+            st.rerun()
+
+if st.session_state.get("view_session_id"):
+    viewed = get_chat_session(st.session_state.view_session_id)
+    if viewed:
+        with st.expander(f"Sesión #{viewed['id']}", expanded=True):
+            st.json(viewed.get("runtime_snapshot") or {})
+            st.json(viewed.get("latest_metadata") or {})
+            linked = [
+                row
+                for row in list_estimations(limit=50)
+                if row.get("chat_session_id") == viewed["id"]
+            ]
+            if linked:
+                st.markdown("**Estimaciones vinculadas**")
+                for row in linked:
+                    payload = row.get("response_payload") or {}
+                    cost = payload.get("cost_usd", 0)
+                    st.caption(
+                        f"#{row['id']} · {row['description'][:60]}… · "
+                        f"cached={bool(row['cached'])} · ${cost:.4f}"
+                    )

@@ -3,28 +3,22 @@
 from __future__ import annotations
 
 import os
+import runpy
 from collections.abc import Iterator
 from pathlib import Path
 
+runpy.run_path(str(Path(__file__).resolve().parent / "path_setup.py"))
+
 import httpx
 import streamlit as st
-from dotenv import load_dotenv
-from streamlit.errors import StreamlitSecretNotFoundError
 
-from app.schemas.estimation import DetailLevel, OutputFormat, ProjectType
-from streamlit_common import MIN_DESCRIPTION_CHARS, env_display, format_api_error
-
-DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
-
-load_dotenv(Path(__file__).resolve().parent / ".env")
-
-
-def get_api_base_url() -> str:
-    env_url = os.getenv("ESTIMATION_API_BASE_URL", DEFAULT_API_BASE_URL)
-    try:
-        return str(st.secrets.get("ESTIMATION_API_BASE_URL", env_url))
-    except StreamlitSecretNotFoundError:
-        return env_url
+from app.domain.schemas.estimation import DetailLevel, OutputFormat, ProjectType
+from streamlit_ui.common import (
+    MIN_DESCRIPTION_CHARS,
+    env_display,
+    format_api_error,
+    get_api_base_url,
+)
 
 
 def stream_estimation(description: str, *, api_base_url: str) -> Iterator[str]:
@@ -93,7 +87,7 @@ with st.sidebar:
     st.subheader("Sesión 5 (.env)")
     st.caption(
         "El streaming usa `POST /estimate/stream` (markdown). "
-        "Para ACB estructurado usa `streamlit_app.py` con sesiones."
+        "Para ACB estructurado usa `streamlit_ui/home.py` → página Conversación."
     )
     st.divider()
     st.subheader("Caché (.env)")

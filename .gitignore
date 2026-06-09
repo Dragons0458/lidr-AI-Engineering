@@ -1,3 +1,6 @@
+# macOS
+.DS_Store
+
 # Python-generated files
 __pycache__/
 *.py[oc]
@@ -25,3 +28,6 @@ evals/stress/results_smoke.csv
 
 # Session planning docs (course alignment)
 planning/
+
+# Streamlit frontend SQLite (local history)
+streamlit_ui/data/*.db

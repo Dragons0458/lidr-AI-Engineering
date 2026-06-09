@@ -11,7 +11,7 @@ test:
     uv run pytest
 
 streamlit:
-    uv run streamlit run streamlit_app.py
+    PYTHONPATH=. uv run streamlit run streamlit_ui/home.py
 
 enable-pre-commit:
     uv run pre-commit install

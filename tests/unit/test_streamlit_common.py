@@ -1,9 +1,16 @@
 import httpx
 
-from streamlit_common import (
+from streamlit_ui.common import (
     format_api_error,
     format_guardrail_detail,
+    get_api_root_url,
     parse_error_detail,
+)
+from streamlit_ui.rag import (
+    STRATEGY_CATALOG,
+    build_settings_update_payload,
+    cost_hint,
+    label_for,
 )
 
 
@@ -55,3 +62,34 @@ def test_parse_error_detail_validation_list() -> None:
     text = parse_error_detail(response)
     assert "description" in text
     assert "10 characters" in text
+
+
+def test_get_api_root_url_strips_api_v1_suffix() -> None:
+    assert get_api_root_url("http://localhost:8000/api/v1") == "http://localhost:8000"
+
+
+def test_strategy_catalog_has_eight_entries_in_canonical_order() -> None:
+    names = [entry["name"] for entry in STRATEGY_CATALOG]
+    assert names == [
+        "structural",
+        "fixed_size",
+        "recursive",
+        "sentence_window",
+        "hierarchical",
+        "semantic",
+        "propositional",
+        "contextual_retrieval",
+    ]
+
+
+def test_label_for_and_cost_hint() -> None:
+    assert label_for("structural") == "Structural (JSON)"
+    assert "seconds" in cost_hint(["structural", "recursive"]).lower()
+    assert "$0.15" in cost_hint(["propositional"])
+
+
+def test_build_settings_update_payload_maps_empty_to_none() -> None:
+    payload = build_settings_update_payload(
+        {"PRIMARY_MODEL": "gpt-4o", "FALLBACK_MODEL": ""}
+    )
+    assert payload == {"PRIMARY_MODEL": "gpt-4o", "FALLBACK_MODEL": None}
