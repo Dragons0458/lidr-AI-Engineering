@@ -46,6 +46,9 @@ dependencies = [
     "langchain-openai>=0.2.0",
     "nltk>=3.9",
     "anthropic>=0.40",
+    # Session 8 — vector database (pgvector + async persistence)
+    "asyncpg>=0.29",
+    "pgvector>=0.3",
 ]
 
 [dependency-groups]
