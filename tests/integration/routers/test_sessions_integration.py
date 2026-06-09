@@ -6,8 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.config import get_settings
 from app.main import app
-from app.schemas.estimation import EstimationResponse, TokenUsage
-from app.services.sessions import ProjectMetadata, Session
+from app.domain.schemas.estimation import EstimationResponse, TokenUsage
+from app.generation.conversation.store import ProjectMetadata, Session
 
 API_PREFIX = "/api/v1"
 
@@ -53,11 +53,11 @@ async def test_session_links_requests_and_updates_project_metadata(
         )
 
     monkeypatch.setattr(
-        "app.routers.sessions.generate_estimation", fake_generate_estimation
+        "app.api.sessions.generate_estimation", fake_generate_estimation
     )
-    monkeypatch.setattr("app.routers.sessions.format_response", fake_format_response)
+    monkeypatch.setattr("app.api.sessions.format_response", fake_format_response)
     monkeypatch.setattr(
-        "app.routers.sessions.extract_project_metadata",
+        "app.api.sessions.extract_project_metadata",
         fake_extract_project_metadata,
     )
 
@@ -127,11 +127,11 @@ async def test_pdf_attachment_content_changes_estimation_output(monkeypatch) -> 
         return previous_metadata
 
     monkeypatch.setattr(
-        "app.routers.sessions.generate_estimation", fake_generate_estimation
+        "app.api.sessions.generate_estimation", fake_generate_estimation
     )
-    monkeypatch.setattr("app.routers.sessions.format_response", fake_format_response)
+    monkeypatch.setattr("app.api.sessions.format_response", fake_format_response)
     monkeypatch.setattr(
-        "app.routers.sessions.extract_project_metadata",
+        "app.api.sessions.extract_project_metadata",
         fake_extract_project_metadata,
     )
 
@@ -193,11 +193,11 @@ async def test_effective_history_sent_to_llm_never_exceeds_configured_max_turns(
         return previous_metadata
 
     monkeypatch.setattr(
-        "app.routers.sessions.generate_estimation", fake_generate_estimation
+        "app.api.sessions.generate_estimation", fake_generate_estimation
     )
-    monkeypatch.setattr("app.routers.sessions.format_response", fake_format_response)
+    monkeypatch.setattr("app.api.sessions.format_response", fake_format_response)
     monkeypatch.setattr(
-        "app.routers.sessions.extract_project_metadata",
+        "app.api.sessions.extract_project_metadata",
         fake_extract_project_metadata,
     )
 

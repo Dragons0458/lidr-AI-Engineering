@@ -6,11 +6,12 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 
+from app.api import config as config_api
+from app.api.embeddings import router as embeddings_router
+from app.api.estimations import router as estimation_router
+from app.api.ingestion import router as ingestion_router
+from app.api.sessions import router as sessions_router
 from app.config import get_settings
-from app.embedding_pipeline.router import router as embeddings_router
-from app.routers.estimations import router as estimation_router
-from app.routers.ingestion import router as ingestion_router
-from app.routers.sessions import router as sessions_router
 
 
 def configure_logging(env: str, log_level: str) -> None:
@@ -77,7 +78,9 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 ### Endpoints principales:
 - POST /api/v1/estimate → Generar estimación
 - POST /api/v1/estimate/stream → Generar estimación en streaming
-- POST /api/v1/embeddings/ingest → Generar chunks y embeddings en memoria
+- POST /embeddings/ingest → Generar chunks y embeddings en memoria
+- POST /embeddings/compare → Comparar estrategias de chunking
+- GET /api/v1/config/models → Configuración runtime de modelos
 - GET /health → Estado del servicio
 - POST /sessions → Crear sesión en memoria
 - POST /sessions/{session_id}/estimate → Estimar usando sesión y adjuntos
@@ -98,6 +101,7 @@ app.include_router(estimation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(ingestion_router)
 app.include_router(embeddings_router)
+app.include_router(config_api.router)
 
 
 @app.get("/health")

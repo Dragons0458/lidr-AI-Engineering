@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import argparse
-import math
 import os
 from pathlib import Path
 import sys
@@ -11,17 +10,6 @@ import sys
 from dotenv import load_dotenv
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-
-def cosine_similarity(a: list[float], b: list[float]) -> float:
-    if len(a) != len(b):
-        raise ValueError("vectors must have the same dimension")
-    dot = sum(x * y for x, y in zip(a, b, strict=True))
-    norm_a = math.sqrt(sum(x * x for x in a))
-    norm_b = math.sqrt(sum(y * y for y in b))
-    if norm_a == 0 or norm_b == 0:
-        raise ValueError("cosine similarity is undefined for zero vectors")
-    return dot / (norm_a * norm_b)
 
 
 def parse_args() -> argparse.Namespace:
@@ -34,7 +22,10 @@ def parse_args() -> argparse.Namespace:
 
 
 def main() -> None:
-    from app.embedding_pipeline.embedder import OpenAIEmbedder
+    from openai import OpenAI
+
+    from app.generation.rag.analysis.similarity import cosine_similarity
+    from app.generation.rag.embedding.embedder import OpenAIEmbedder
 
     args = parse_args()
     load_dotenv()
@@ -43,7 +34,7 @@ def main() -> None:
         raise SystemExit("OPENAI_API_KEY is required in the environment or .env")
 
     model = os.getenv("EMBEDDING_MODEL", "text-embedding-3-small")
-    embedder = OpenAIEmbedder(api_key=api_key, model=model)
+    embedder = OpenAIEmbedder(client=OpenAI(api_key=api_key), model=model)
     vector_a = embedder.embed_one(args.text_a)
     vector_b = embedder.embed_one(args.text_b)
     similarity = cosine_similarity(vector_a, vector_b)

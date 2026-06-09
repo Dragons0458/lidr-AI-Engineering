@@ -1,17 +1,35 @@
+"""FastAPI dependency factories for shared singletons."""
+
+from __future__ import annotations
+
 from functools import lru_cache
 
+import anthropic
 import redis
 import structlog
+from openai import OpenAI
 from redisvl.utils.vectorize import OpenAITextVectorizer
 
-from app.cache.semantic import EstimationSemanticCache
 from app.config import get_settings
-from app.embedding_pipeline.embedder import OpenAIEmbedder
+from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.llm.wrapper import LLMWrapper
+from app.generation.cag.exact import EstimationCache
+from app.generation.cag.semantic import EstimationSemanticCache
+from app.generation.rag.chunking.base import Chunker
+from app.generation.rag.chunking.structural import JSONStructuralChunker
+from app.generation.rag.chunking.strategies import (
+    ContextualRetrievalChunker,
+    FixedSizeChunker,
+    HierarchicalChunker,
+    PropositionalChunker,
+    RecursiveChunker,
+    SemanticChunker,
+    SentenceWindowChunker,
+)
+from app.generation.rag.embedding.embedder import OpenAIEmbedder
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
-from app.services.cache import EstimationCache
-from app.services.llm_wrapper import LLMWrapper
 
 log = structlog.get_logger()
 
@@ -23,22 +41,126 @@ def get_cache() -> EstimationCache:
 
 
 @lru_cache
+def get_runtime_config() -> RuntimeModelConfig:
+    """Redis-backed override store for the LLM model knobs (Settings UI)."""
+    settings = get_settings()
+    return RuntimeModelConfig.from_url(settings.REDIS_URL, settings)
+
+
+@lru_cache
 def get_llm_wrapper() -> LLMWrapper:
     settings = get_settings()
-    primary = settings.PRIMARY_MODEL
     return LLMWrapper(
-        primary_model=primary,
+        primary_model=settings.PRIMARY_MODEL,
         fallback_model=settings.FALLBACK_MODEL,
         timeout=settings.LLM_TIMEOUT,
         num_retries=settings.LLM_RETRIES,
         cache=get_cache(),
         cache_enabled=settings.CACHE_ENABLED,
+        runtime_config=get_runtime_config(),
     )
 
 
 @lru_cache
+def get_openai_client() -> OpenAI | None:
+    settings = get_settings()
+    if not settings.OPENAI_API_KEY:
+        return None
+    return OpenAI(api_key=settings.OPENAI_API_KEY)
+
+
+@lru_cache
+def get_chunker() -> JSONStructuralChunker:
+    return JSONStructuralChunker()
+
+
+@lru_cache
+def get_embedder() -> OpenAIEmbedder | None:
+    settings = get_settings()
+    client = get_openai_client()
+    if client is None:
+        log.warning("embedder_disabled", reason="no_openai_key")
+        return None
+    return OpenAIEmbedder(client=client, model=settings.EMBEDDING_MODEL)
+
+
+@lru_cache
+def get_anthropic_client() -> anthropic.Anthropic | None:
+    settings = get_settings()
+    if not settings.ANTHROPIC_API_KEY:
+        return None
+    return anthropic.Anthropic(api_key=settings.ANTHROPIC_API_KEY)
+
+
+@lru_cache
+def get_fixed_size_chunker() -> FixedSizeChunker:
+    return FixedSizeChunker()
+
+
+@lru_cache
+def get_recursive_chunker() -> RecursiveChunker:
+    return RecursiveChunker()
+
+
+@lru_cache
+def get_sentence_window_chunker() -> SentenceWindowChunker:
+    return SentenceWindowChunker()
+
+
+@lru_cache
+def get_hierarchical_chunker() -> HierarchicalChunker:
+    return HierarchicalChunker()
+
+
+@lru_cache
+def get_semantic_chunker() -> SemanticChunker:
+    settings = get_settings()
+    return SemanticChunker(
+        api_key=settings.OPENAI_API_KEY, model=settings.EMBEDDING_MODEL
+    )
+
+
+def get_propositional_chunker() -> PropositionalChunker:
+    client = get_openai_client()
+    if client is None:
+        raise RuntimeError("PropositionalChunker requires OPENAI_API_KEY.")
+    model = get_runtime_config().effective("PROPOSITIONAL_CHUNKER_MODEL")
+    return PropositionalChunker(client=client, model=model)
+
+
+def get_contextual_retrieval_chunker() -> ContextualRetrievalChunker:
+    client = get_anthropic_client()
+    if client is None:
+        raise RuntimeError("ContextualRetrievalChunker requires ANTHROPIC_API_KEY.")
+    model = get_runtime_config().effective("CONTEXTUAL_CHUNKER_MODEL")
+    return ContextualRetrievalChunker(client=client, model=model)
+
+
+CHUNKER_FACTORIES = {
+    "structural": get_chunker,
+    "fixed_size": get_fixed_size_chunker,
+    "recursive": get_recursive_chunker,
+    "sentence_window": get_sentence_window_chunker,
+    "semantic": get_semantic_chunker,
+    "propositional": get_propositional_chunker,
+    "contextual_retrieval": get_contextual_retrieval_chunker,
+    "hierarchical": get_hierarchical_chunker,
+}
+ALL_STRATEGIES = list(CHUNKER_FACTORIES)
+
+
+def build_chunkers(names: list[str]) -> list[Chunker]:
+    chunkers: list[Chunker] = []
+    for name in names:
+        factory = CHUNKER_FACTORIES.get(name)
+        if factory is None:
+            raise KeyError(name)
+        chunkers.append(factory())
+    return chunkers
+
+
+@lru_cache
 def get_semantic_cache() -> EstimationSemanticCache | None:
-    """Return semantic cache or None when disabled or Redis/embedding setup fails."""
     settings = get_settings()
     if not settings.SEMANTIC_CACHE_ENABLED:
         return None
@@ -64,22 +186,8 @@ def get_semantic_cache() -> EstimationSemanticCache | None:
         return None
 
 
-@lru_cache
-def get_embedder() -> OpenAIEmbedder:
-    settings = get_settings()
-    if not settings.OPENAI_API_KEY:
-        raise RuntimeError("OPENAI_API_KEY is required for embeddings")
-    return OpenAIEmbedder(
-        api_key=settings.OPENAI_API_KEY,
-        model=settings.EMBEDDING_MODEL,
-    )
-
-
 def build_pseudonymizer(session):
-    """Build a ConsistentPseudonymizer backed by Postgres (Session 6).
-
-    Not a singleton — the mapping store wraps a Session, so callers pass their own.
-    """
+    """Build a ConsistentPseudonymizer backed by Postgres (Session 6)."""
     from app.ingestion.pii import (
         ConsistentPseudonymizer,
         PostgresMappingStore,

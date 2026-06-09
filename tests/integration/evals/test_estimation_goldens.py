@@ -3,7 +3,7 @@ import statistics
 
 import pytest
 
-from app.schemas.estimation import EstimationResponse
+from app.domain.schemas.estimation import EstimationResponse
 from tests.integration.evals.fixtures import golden_dataset
 from tests.integration.evals.helpers import (
     estimate_real,

@@ -4,8 +4,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from app.schemas.estimation import EstimationResponse, TokenUsage
-from app.services.sessions import Session
+from app.domain.schemas.estimation import EstimationResponse, TokenUsage
+from app.generation.conversation.store import Session
 from evals.stress.run import _evaluate_memory, run_stress
 
 
@@ -52,11 +52,11 @@ async def test_run_stress_writes_csv_without_llm(monkeypatch, tmp_path) -> None:
         return previous_metadata
 
     monkeypatch.setattr(
-        "app.routers.sessions.generate_estimation", fake_generate_estimation
+        "app.api.sessions.generate_estimation", fake_generate_estimation
     )
-    monkeypatch.setattr("app.routers.sessions.format_response", fake_format_response)
+    monkeypatch.setattr("app.api.sessions.format_response", fake_format_response)
     monkeypatch.setattr(
-        "app.routers.sessions.extract_project_metadata",
+        "app.api.sessions.extract_project_metadata",
         fake_extract_project_metadata,
     )
 

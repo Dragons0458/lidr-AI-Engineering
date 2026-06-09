@@ -49,9 +49,11 @@ def clean_budget_records(records: Iterable[dict]) -> pd.DataFrame:
     for column in ("client_name", "contact", "contact_email", "notes"):
         if column in df.columns:
             df[column] = df[column].apply(
-                lambda v: pd.NA
-                if (isinstance(v, str) and v.strip() in NULL_PLACEHOLDERS)
-                else v
+                lambda v: (
+                    pd.NA
+                    if (isinstance(v, str) and v.strip() in NULL_PLACEHOLDERS)
+                    else v
+                )
             )
 
     # 2. Currency casing

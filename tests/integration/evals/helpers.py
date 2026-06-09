@@ -2,14 +2,14 @@ import re
 
 
 def estimate_real(transcript: str):
-    from app.formatters.llm_formatters import format_response
-    from app.schemas.estimation import (
+    from app.foundation.formatters import format_response
+    from app.domain.schemas.estimation import (
         DetailLevel,
         EstimationRequest,
         OutputFormat,
         ProjectType,
     )
-    from app.services.estimation_service import generate_estimation
+    from app.domain.estimation_service import generate_estimation
 
     request = EstimationRequest(
         description=transcript,

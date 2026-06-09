@@ -40,6 +40,12 @@ dependencies = [
     "presidio-anonymizer>=2.2",
     "spacy>=3.7",
     "faker>=24.0",
+  # Session 7 live — chunking strategies
+    "langchain-text-splitters>=0.3.0",
+    "langchain-experimental>=0.3.0",
+    "langchain-openai>=0.2.0",
+    "nltk>=3.9",
+    "anthropic>=0.40",
 ]
 
 [dependency-groups]
@@ -50,7 +56,12 @@ dev = [
     "pytest>=9.0.3",
 ]
 
+[tool.ruff.lint.per-file-ignores]
+# path_setup must run before streamlit_ui imports when launched via home.py
+"streamlit_ui/**/*.py" = ["E402"]
+
 [tool.pytest.ini_options]
+pythonpath = ["."]
 markers = [
     "eval: LLM evaluation tests that may require external model access",
     "slow: slower tests that are not intended for the tight feedback loop",

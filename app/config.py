@@ -44,6 +44,17 @@ class Settings(BaseSettings):
     # --- Session 5: Actor-Critic-Boss ---
     CRITIC_MODEL: str | None = None
     BOSS_MAX_ITERATIONS: int = Field(default=3, ge=1, le=5)
+    # --- Session 7: chunking strategies + runtime model catalog ---
+    AVAILABLE_MODELS: list[str] = Field(
+        default_factory=lambda: [
+            "gpt-4o-mini",
+            "gpt-4o",
+            "claude-haiku-4-5-20251001",
+            "claude-sonnet-4-5",
+        ]
+    )
+    PROPOSITIONAL_CHUNKER_MODEL: str = "gpt-4o-mini"
+    CONTEXTUAL_CHUNKER_MODEL: str = "claude-sonnet-4-5"
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

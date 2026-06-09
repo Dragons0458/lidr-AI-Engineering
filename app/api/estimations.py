@@ -1,0 +1,121 @@
+import asyncio
+from collections.abc import AsyncIterator
+from typing import Literal
+
+import structlog
+from fastapi import APIRouter, HTTPException, Query
+from sse_starlette.sse import EventSourceResponse
+
+from app.config import get_settings
+from app.foundation.llm.errors import LLMServiceError
+from app.foundation.formatters import format_response
+from app.foundation.guardrails.input import InputGuardrailViolation, check_input
+from app.domain.schemas.estimation import EstimationRequest, EstimationResponse
+from app.domain.estimation_service import (
+    generate_estimation,
+    generate_estimation_stream,
+)
+from app.generation.conversation.evaluation import evaluate_estimation_structure
+
+log = structlog.get_logger()
+settings = get_settings()
+
+router = APIRouter(tags=["estimations"])
+
+
+@router.post("/estimate", response_model=EstimationResponse)
+async def estimate(
+    request: EstimationRequest,
+    prompt_version: Literal["v1", "v2"] = Query(default="v1"),
+) -> EstimationResponse:
+    """Generates an estimation for a software development project based on a meeting summary."""
+
+    try:
+        response = format_response(
+            generate_estimation(request, prompt_version=prompt_version),
+            prompt_version=prompt_version,
+        )
+        if request.evaluate and not response.out_of_scope:
+            response.validation = evaluate_estimation_structure(
+                response.estimation,
+                response.finish_reason,
+                request.output_format,
+            )
+        return response
+    except InputGuardrailViolation as e:
+        raise HTTPException(
+            status_code=400,
+            detail={"reason": e.reason, "message": e.message},
+        ) from e
+    except LLMServiceError as e:
+        log.error("estimation_endpoint_error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post("/estimate/stream")
+async def estimate_stream(
+    request: EstimationRequest,
+    prompt_version: Literal["v1", "v2"] = Query(default="v1"),
+) -> EventSourceResponse:
+    """Stream estimation text via Server-Sent Events (token / done / error)."""
+
+    model = request.model or settings.PRIMARY_MODEL
+
+    if settings.INPUT_GUARDRAILS_ENABLED:
+        try:
+            check_input(
+                request.description,
+                attachments_text=[
+                    attachment.content for attachment in request.attachments or []
+                ],
+            )
+        except InputGuardrailViolation as e:
+            raise HTTPException(
+                status_code=400,
+                detail={"reason": e.reason, "message": e.message},
+            ) from e
+
+    async def event_generator() -> AsyncIterator[dict]:
+        loop = asyncio.get_running_loop()
+        chunks = generate_estimation_stream(
+            request,
+            prompt_version=prompt_version,
+            use_cache=True,
+        )
+
+        def _next_chunk() -> str | None:
+            try:
+                return next(chunks)
+            except StopIteration:
+                return None
+            except Exception as exc:
+                log.error(
+                    "estimate_stream_failed",
+                    error=str(exc),
+                    error_type=type(exc).__name__,
+                )
+                raise
+
+        yield {
+            "event": "meta",
+            "data": f'{{"model":"{model}","prompt_version":"{prompt_version}"}}',
+        }
+
+        try:
+            while True:
+                chunk = await loop.run_in_executor(None, _next_chunk)
+                if chunk is None:
+                    break
+                if chunk:
+                    yield {"event": "token", "data": chunk}
+            yield {"event": "done", "data": "[DONE]"}
+        except LLMServiceError as exc:
+            yield {"event": "error", "data": str(exc)}
+        except Exception as exc:
+            yield {"event": "error", "data": str(exc)}
+
+    try:
+        return EventSourceResponse(event_generator())
+    except LLMServiceError as e:
+        log.error("estimation_stream_endpoint_error", error=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
