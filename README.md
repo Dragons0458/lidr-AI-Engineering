@@ -110,8 +110,11 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   pandas/Pandera, pseudonimización PII/GDPR (Presidio + Faker), jobs en Postgres y API
   `POST/GET /api/v1/ingestion/*`.
 - **Sesión 7**: framework RAG de chunking (8 estrategias), embeddings OpenAI
-  (`POST /embeddings/ingest`, `POST /embeddings/compare`), runtime config de modelos
+  (`POST /embeddings/compare`), runtime config de modelos
   (`GET/PUT /api/v1/config/models`) y CLIs de similitud coseno / comparación.
+- **Sesión 8**: persistencia vectorial en Postgres + pgvector (`documents` + `chunks`),
+  ingesta transaccional (`POST /embeddings/ingest`) y búsqueda semántica por SQL
+  (`POST /embeddings/search`, distancia coseno sin índice vectorial todavía).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -130,7 +133,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Structlog
 - RedisVL + NumPy (caché semántico)
 - OpenAI SDK + tiktoken + langchain-text-splitters + nltk + anthropic (embeddings y chunking)
-- SQLAlchemy 2.0 + Alembic + psycopg (Postgres)
+- SQLAlchemy 2.0 + Alembic + psycopg + asyncpg + pgvector (Postgres)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -147,7 +150,7 @@ app/
     estimations.py               # POST /api/v1/estimate (+ stream)
     sessions.py                  # Sesiones conversacionales + ACB
     ingestion.py                 # POST /ingestion/runs, GET /ingestion/jobs/{id}
-    embeddings.py                # POST /embeddings/ingest + /compare (S07)
+    embeddings.py                # POST /embeddings/ingest + /search (S08) + /compare (S07)
     config.py                    # GET/PUT /api/v1/config/models (S07)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
@@ -157,7 +160,7 @@ app/
     llm/runtime_config.py        # Overrides Redis de modelos
     guardrails/                  # Input/output guardrails
     prompts/                     # Plantillas Jinja versionadas
-    persistence/                 # SQLAlchemy + repositorios (S06)
+    persistence/                 # SQLAlchemy sync (S06) + async engine (S08)
     attachments/                 # Extracción PDF/DOCX
   generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
     cag/                         # Caché exact-match + semántico
@@ -167,6 +170,7 @@ app/
       chunking/strategies/       # 7 estrategias + structural
       analysis/                  # cosine_similarity + ChunkingComparator
       embedding/                 # OpenAIEmbedder
+      store/models.py            # DocumentRow + ChunkRow (pgvector, S08)
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
 data/
@@ -177,6 +181,7 @@ data/
 scripts/
   compare.py                     # Coseno entre dos textos (S07)
   compare_chunkers.py            # Comparación multi-estrategia en memoria (S07)
+  query_examples.py              # Cinco queries semánticas contra /embeddings/search (S08)
   preflight_s06.py
   demo_cleaning_s06.py
   demo_pii_s06.py
@@ -275,8 +280,9 @@ Endpoints locales predeterminados:
 - `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
 - `POST /api/v1/ingestion/runs` (202 — dispara ingesta en background)
 - `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
-- `POST /embeddings/ingest` (chunking estructural + embeddings en memoria)
-- `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query)
+- `POST /embeddings/ingest` (chunking estructural + embeddings → Postgres/pgvector)
+- `POST /embeddings/search` (búsqueda semántica por distancia coseno en SQL)
+- `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 
 Con Postgres en marcha (`docker compose up` aplica `alembic upgrade head` al arrancar la API):
@@ -317,8 +323,8 @@ uv run python -m app.ingestion.catalog.loader data/catalog/catalog.yaml
 El módulo `app/generation/rag/` convierte presupuestos JSON en chunks, genera
 embeddings con OpenAI y expone comparación de **8 estrategias de chunking**
 (structural, fixed_size, recursive, sentence_window, semantic, propositional,
-contextual_retrieval, hierarchical). Nada se persiste todavía; pgvector queda
-para la Sesión 8.
+contextual_retrieval, hierarchical). La ingesta persistente y la búsqueda
+semántica viven en la Sesión 8 (`POST /embeddings/ingest`, `POST /embeddings/search`).
 
 Requisitos en `.env`:
 
@@ -330,18 +336,6 @@ PROPOSITIONAL_CHUNKER_MODEL=gpt-4o-mini
 CONTEXTUAL_CHUNKER_MODEL=claude-sonnet-4-5
 ANTHROPIC_API_KEY=your_key_here   # solo para contextual_retrieval
 ```
-
-### Ingest (structural)
-
-```bash
-curl -s -X POST http://localhost:8000/embeddings/ingest \
-  -H 'Content-Type: application/json' \
-  -d "{\"budgets\":$(cat data/budgets_sample.json)}" | jq '.stats'
-```
-
-Salida esperada: `total_budgets=15`, `total_chunks` = nº de componentes,
-`total_tokens > 0`, `estimated_cost_usd` en céntimos, cada chunk con
-`embedding` de 1536 floats.
 
 ### Comparar estrategias de chunking
 
@@ -404,6 +398,65 @@ curl -s -X PUT http://localhost:8000/api/v1/config/models \
 ```
 
 `EMBEDDING_MODEL` es read-only (cambiarlo invalidaría vectores almacenados).
+
+## Sesión 8 — pgvector y búsqueda semántica
+
+La ingesta deja de devolver vectores por HTTP: cada presupuesto se persiste como
+un `document` con sus `chunks` (cada uno con embedding `vector(1536)`) en una
+**única transacción** async. La búsqueda embebe la query y ordena por
+`embedding <=> query_vector` (distancia coseno) con **sequential scan** — sin
+índice HNSW/IVFFlat todavía (baseline para medir en directo).
+
+Migración: `alembic/versions/0002_vector_schema.py` (`CREATE EXTENSION vector`,
+tablas `documents` + `chunks`, índice GIN sobre `metadata`).
+
+### Ingest (persistente)
+
+```bash
+# Un presupuesto del corpus de ejemplo
+BUDGET=$(jq '.[0]' data/budgets_sample.json)
+curl -s -X POST http://localhost:8000/embeddings/ingest \
+  -H 'Content-Type: application/json' \
+  -d "{\"source_path\":\"data/budgets/s07-fin-001.json\",\"document_type\":\"historical_budget\",\"content\":$BUDGET}" | jq
+
+# Reintento con el mismo source_path → 409 Conflict
+```
+
+Salida esperada (200): `document_id`, `chunks_created`, `embedding_dimension=1536`,
+`ingestion_time_ms`.
+
+### Search (semántica por SQL)
+
+```bash
+curl -s -X POST http://localhost:8000/embeddings/search \
+  -H 'Content-Type: application/json' \
+  -d '{"query":"OAuth JWT authentication fintech","k":5}' | jq
+```
+
+### Script de queries de ejemplo
+
+Ingesta el corpus completo y ejecuta cinco queries de validación:
+
+```bash
+docker compose run --rm api python scripts/query_examples.py --ingest
+# Salida guardada en output_examples.txt (deliverable pre-sesión)
+docker compose run --rm api python scripts/query_examples.py --ingest \
+  > output_examples.txt 2>&1
+```
+
+### Decisiones de esquema (justificación)
+
+| Decisión | Por qué |
+|----------|---------|
+| **Dos tablas (`documents` + `chunks`)** | Un presupuesto produce N chunks. Una sola tabla duplicaría metadata del documento en cada fila y perdería integridad referencial. `ON DELETE CASCADE` borra chunks al borrar el documento. |
+| **`metadata` como JSONB** | Lo estable va en columnas tipadas (`document_type`, `chunk_type`, fechas); lo variable que enriquece el chunker (sector, tecnologías, complejidad…) va en JSONB. Un índice **GIN** permite filtrar por claves arbitrarias sin migrar el esquema. |
+| **`cosine_distance` (`<=>`), no L2 ni inner product** | Los embeddings de OpenAI están normalizados; coseno e inner product son equivalentes. Elegimos coseno por convención RAG y para alinear query e índice HNSW futuro (`vector_cosine_ops`) — si el operador no coincide, Postgres ignora el índice en silencio. |
+| **Sin índice vectorial (por ahora)** | El sequential scan es el baseline medible en directo antes de añadir HNSW. Para el corpus de ejemplo (decenas de docs, cientos de chunks) responde en pocos cientos de ms. |
+
+`vector(1536)` está fijado a `text-embedding-3-small`; cambiar dimensión obliga a
+re-embeber todo. `embedding` es nullable para permitir ingesta asíncrona futura
+(insertar chunk y rellenar vector después), aunque este ejercicio persiste ambos
+atómicamente.
 
 ## Ejecutar la app de Streamlit
 
