@@ -1,0 +1,96 @@
+Ingesting 15 budgets from /Users/dragons0458/Desarrollo/PycharmProjects/ai_engineering/estimador-cag/data/budgets_sample.json...
+  skip (already ingested): data/budgets/s07-fin-001.json
+  skip (already ingested): data/budgets/s07-fin-002.json
+  skip (already ingested): data/budgets/s07-fin-003.json
+  skip (already ingested): data/budgets/s07-eco-001.json
+  skip (already ingested): data/budgets/s07-eco-002.json
+  skip (already ingested): data/budgets/s07-eco-003.json
+  skip (already ingested): data/budgets/s07-eco-004.json
+  skip (already ingested): data/budgets/s07-hlt-001.json
+  skip (already ingested): data/budgets/s07-hlt-002.json
+  skip (already ingested): data/budgets/s07-hlt-003.json
+  skip (already ingested): data/budgets/s07-hlt-004.json
+  skip (already ingested): data/budgets/s07-ind-001.json
+  skip (already ingested): data/budgets/s07-ind-002.json
+  skip (already ingested): data/budgets/s07-ind-003.json
+  skip (already ingested): data/budgets/s07-ind-004.json
+
+========================================================================
+Query: Component direct match (sanity check)
+Text:  REST API development with JWT authentication for financial sector
+------------------------------------------------------------------------
+search_time_ms=170, hits=5
+  1. chunk_id=1  distance=0.4056  chunk_type=budget_component
+     [Project: Digital wallet for SME payments with onboarding, compliance review, and card funding flows.] [Client sector: f...
+  2. chunk_id=2  distance=0.5431  chunk_type=budget_component
+     [Project: Digital wallet for SME payments with onboarding, compliance review, and card funding flows.] [Client sector: f...
+  3. chunk_id=4  distance=0.5923  chunk_type=budget_component
+     [Project: Loan origination portal for retail banking with document capture, risk scoring, and advisor dashboards.] [Clie...
+  4. chunk_id=3  distance=0.6070  chunk_type=budget_component
+     [Project: Loan origination portal for retail banking with document capture, risk scoring, and advisor dashboards.] [Clie...
+  5. chunk_id=6  distance=0.6209  chunk_type=budget_component
+     [Project: Treasury reconciliation platform for matching bank statements against ERP invoices and payouts.] [Client secto...
+
+========================================================================
+Query: Semantic reformulation
+Text:  secure backend service with token-based access control for banking applications
+------------------------------------------------------------------------
+search_time_ms=231, hits=5
+  1. chunk_id=1  distance=0.4856  chunk_type=budget_component
+     [Project: Digital wallet for SME payments with onboarding, compliance review, and card funding flows.] [Client sector: f...
+  2. chunk_id=2  distance=0.5816  chunk_type=budget_component
+     [Project: Digital wallet for SME payments with onboarding, compliance review, and card funding flows.] [Client sector: f...
+  3. chunk_id=4  distance=0.5900  chunk_type=budget_component
+     [Project: Loan origination portal for retail banking with document capture, risk scoring, and advisor dashboards.] [Clie...
+  4. chunk_id=3  distance=0.5948  chunk_type=budget_component
+     [Project: Loan origination portal for retail banking with document capture, risk scoring, and advisor dashboards.] [Clie...
+  5. chunk_id=16  distance=0.6489  chunk_type=budget_component
+     [Project: Patient portal for appointments, lab results, consent forms, and secure messaging with care teams.] [Client se...
+
+========================================================================
+Query: Out-of-domain query
+Text:  mobile application for restaurant reservations
+------------------------------------------------------------------------
+search_time_ms=265, hits=5
+  1. chunk_id=15  distance=0.5569  chunk_type=budget_component
+     [Project: Patient portal for appointments, lab results, consent forms, and secure messaging with care teams.] [Client se...
+  2. chunk_id=11  distance=0.6626  chunk_type=budget_component
+     [Project: Online store for cycling equipment with same-day delivery scheduling and returns management.] [Client sector: ...
+  3. chunk_id=8  distance=0.6636  chunk_type=budget_component
+     [Project: Marketplace modernization for catalog search, promotions, checkout, and seller inventory synchronization.] [Cl...
+  4. chunk_id=26  distance=0.6667  chunk_type=budget_component
+     [Project: Port logistics control tower for container tracking, berth planning, customs milestones, and truck appointment...
+  5. chunk_id=12  distance=0.6713  chunk_type=budget_component
+     [Project: Online store for cycling equipment with same-day delivery scheduling and returns management.] [Client sector: ...
+
+========================================================================
+Query: Ambiguous short query
+Text:  integration with external system
+------------------------------------------------------------------------
+search_time_ms=242, hits=5
+  1. chunk_id=5  distance=0.6061  chunk_type=budget_component
+     [Project: Treasury reconciliation platform for matching bank statements against ERP invoices and payouts.] [Client secto...
+  2. chunk_id=29  distance=0.6200  chunk_type=budget_component
+     [Project: Energy operations platform for wind farm monitoring, incident management, and regulatory reporting.] [Client s...
+  3. chunk_id=6  distance=0.6249  chunk_type=budget_component
+     [Project: Treasury reconciliation platform for matching bank statements against ERP invoices and payouts.] [Client secto...
+  4. chunk_id=22  distance=0.6268  chunk_type=budget_component
+     [Project: Pharmacy fulfillment system for prescriptions, insurance validation, inventory, and delivery dispatch.] [Clien...
+  5. chunk_id=25  distance=0.6277  chunk_type=budget_component
+     [Project: Port logistics control tower for container tracking, berth planning, customs milestones, and truck appointment...
+
+========================================================================
+Query: Highly specific technical query
+Text:  migration from monolith to microservices architecture using Kubernetes
+------------------------------------------------------------------------
+search_time_ms=223, hits=5
+  1. chunk_id=25  distance=0.6142  chunk_type=budget_component
+     [Project: Port logistics control tower for container tracking, berth planning, customs milestones, and truck appointment...
+  2. chunk_id=29  distance=0.6462  chunk_type=budget_component
+     [Project: Energy operations platform for wind farm monitoring, incident management, and regulatory reporting.] [Client s...
+  3. chunk_id=26  distance=0.6707  chunk_type=budget_component
+     [Project: Port logistics control tower for container tracking, berth planning, customs milestones, and truck appointment...
+  4. chunk_id=17  distance=0.6871  chunk_type=budget_component
+     [Project: Remote patient monitoring dashboard for chronic care programs and connected medical devices.] [Client sector: ...
+  5. chunk_id=23  distance=0.6875  chunk_type=budget_component
+     [Project: Manufacturing execution dashboard for production lines, machine telemetry, downtime analysis, and maintenance ...
