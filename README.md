@@ -19,7 +19,8 @@ cp .env.example .env
 
 2. Edita `.env` con una clave de API real (OpenAI, Anthropic o Google).
 
-    - Para Docker Compose, `streamlit` lee `ESTIMATION_API_BASE_URL` desde el entorno.
+    - Para Docker Compose, `streamlit` lee `ESTIMATION_API_BASE_URL` y `STREAMLIT_DB_PATH`
+      desde el entorno (SQLite local en `streamlit_ui/data/frontend.db`).
     - El archivo `.streamlit/secrets.toml` es opcional y no es obligatorio.
 
 3. Construye y ejecuta todo:
@@ -78,10 +79,16 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit con streaming SSE (no modifica `streamlit_app.py`):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + Ajustes IA):
 
 ```bash
-uv run streamlit run streamlit_stream_app.py
+uv run streamlit run streamlit_ui/home.py
+```
+
+Demo SSE standalone (sin multipage):
+
+```bash
+uv run streamlit run streamlit_ui/stream_app.py
 ```
 
 Alternativa: levantar todo el stack con Compose (`docker compose up --build`) sin dev container.
@@ -102,11 +109,14 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - **Sesión 6** (data-driven AI): catálogo YAML de fuentes, ingesta JSON/TXT, limpieza con
   pandas/Pandera, pseudonimización PII/GDPR (Presidio + Faker), jobs en Postgres y API
   `POST/GET /api/v1/ingestion/*`.
-- **Sesión 7**: pipeline mínimo de embeddings (`POST /api/v1/embeddings/ingest`),
-  chunking estructural de presupuestos JSON y CLI de similitud coseno.
+- **Sesión 7**: framework RAG de chunking (8 estrategias), embeddings OpenAI
+  (`POST /embeddings/ingest`, `POST /embeddings/compare`), runtime config de modelos
+  (`GET/PUT /api/v1/config/models`) y CLIs de similitud coseno / comparación.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
-- Interfaz de Streamlit para pruebas interactivas y uso demostrativo.
+- **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
+  multi-turno, RAG Chunking Lab y Ajustes IA; persistencia local SQLite
+  (`estimations`, `chat_sessions`, `chunking_comparisons`) espejo de `estimator-web`.
 - Pruebas de renderizado de prompts con `pytest`.
 
 ## Stack tecnológico
@@ -119,7 +129,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - Streamlit
 - Structlog
 - RedisVL + NumPy (caché semántico)
-- OpenAI SDK + tiktoken (embeddings y conteo de tokens)
+- OpenAI SDK + tiktoken + langchain-text-splitters + nltk + anthropic (embeddings y chunking)
 - SQLAlchemy 2.0 + Alembic + psycopg (Postgres)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
@@ -130,51 +140,59 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 
 ```text
 app/
-  main.py                        # Punto de entrada de la app FastAPI
-  config.py                      # Configuración basada en variables de entorno
-  embedding_pipeline/            # Chunking estructural + embeddings OpenAI (Sesión 7)
-  guardrails/                    # Input/output guardrails (moderación, PII, scope)
-  cache/semantic.py              # Caché semántico RedisVL
-  ingestion/                     # Catálogo, parsers JSON/TXT, limpieza, PII, orquestador
-  persistence/                   # SQLAlchemy + repositorios (jobs, pseudonym mappings)
-  routers/estimations.py         # Endpoints de estimación
-  routers/ingestion.py           # POST /ingestion/runs, GET /ingestion/jobs/{id}
-  services/estimation_service.py # Pipeline LLM + cachés + guardrails
-  services/sessions.py           # Estado de sesión y ProjectMetadata en memoria
-  services/project_metadata_extractor.py # Extracción LLM de hechos del proyecto
-  formatters/llm_formatters.py   # Mapea la salida del LLM a la respuesta de la API
-  schemas/estimation.py          # Solicitud/respuesta y enums
-  schemas/ingestion.py           # Contratos HTTP de ingesta
-  prompts/
-    loader.py                    # Renderizado Jinja para versiones de prompts
-    estimation/
-      v1/
-      v2/
-alembic/                         # Migraciones Postgres (Sesión 6)
+  main.py                        # Punto de entrada FastAPI + registro de routers
+  config.py                      # Settings (.env) + runtime model catalog (S07)
+  dependencies.py                # Composition root: singletons y chunker factories
+  api/                           # Capa HTTP (transporte)
+    estimations.py               # POST /api/v1/estimate (+ stream)
+    sessions.py                  # Sesiones conversacionales + ACB
+    ingestion.py                 # POST /ingestion/runs, GET /ingestion/jobs/{id}
+    embeddings.py                # POST /embeddings/ingest + /compare (S07)
+    config.py                    # GET/PUT /api/v1/config/models (S07)
+  domain/
+    estimation_service.py        # Conductor: guardrails + cachés + LLM
+    schemas/                     # Contratos Pydantic (estimation, ingestion, …)
+  foundation/                    # Sin opinión de arquitectura AI
+    llm/wrapper.py               # LiteLLM + Instructor + runtime config
+    llm/runtime_config.py        # Overrides Redis de modelos
+    guardrails/                  # Input/output guardrails
+    prompts/                     # Plantillas Jinja versionadas
+    persistence/                 # SQLAlchemy + repositorios (S06)
+    attachments/                 # Extracción PDF/DOCX
+  generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
+    cag/                         # Caché exact-match + semántico
+    agentic/                     # Actor-Critic-Boss
+    conversation/                # Sesiones, compresión, tier resolver
+    rag/                         # Chunking + embeddings + comparación (S07)
+      chunking/strategies/       # 7 estrategias + structural
+      analysis/                  # cosine_similarity + ChunkingComparator
+      embedding/                 # OpenAIEmbedder
+  ingestion/                     # Pipeline offline S06 (sin cambios)
+alembic/
 data/
-  catalog/catalog.yaml           # Decisiones include/review/exclude por fuente
-  budgets_sample.json            # Sample sintético de 15 presupuestos (Sesión 7)
-  seed/                          # Corpus de demo (budgets JSON, transcripts TXT)
+  catalog/catalog.yaml
+  budgets_sample.json            # 15 presupuestos sintéticos (S07)
+  test_queries.json              # 6 consultas fijas para /embeddings/compare
+  seed/
 scripts/
-  compare.py                     # Coseno entre dos embeddings OpenAI (Sesión 7)
-  preflight_s06.py               # Checks de entorno antes de la sesión en vivo
-  demo_cleaning_s06.py           # Demo limpieza + validación Pandera
-  demo_pii_s06.py                # Demo pseudonimización consistente
-streamlit_app.py                 # Frontend de Streamlit (bloqueante)
-streamlit_stream_app.py        # Cliente Streamlit consumiendo SSE
-tests/
-  unit/
-    prompts/test_loader.py
-    routers/test_sessions.py
-    services/test_project_metadata_extractor.py
-    services/test_sessions_service.py
-  integration/
-    routers/test_sessions_integration.py
-    evals/
-      fixtures.py
-      helpers.py
-      test_estimation_goldens.py
-      test_estimation_judge.py
+  compare.py                     # Coseno entre dos textos (S07)
+  compare_chunkers.py            # Comparación multi-estrategia en memoria (S07)
+  preflight_s06.py
+  demo_cleaning_s06.py
+  demo_pii_s06.py
+streamlit_ui/
+  home.py                        # Home (entrypoint multipage)
+  common.py                      # Helpers compartidos (errores, API URL)
+  rag.py                         # Catálogo de estrategias RAG + render compare
+  store.py                       # SQLite local del frontend
+  stream_app.py                  # Demo SSE standalone
+  data/                          # SQLite del histórico local (frontend.db)
+  pages/
+    1_Estimacion.py
+    2_Conversacion.py
+    3_RAG_Lab.py
+    4_Ajustes_IA.py
+tests/unit/{api,domain,foundation,generation}/…
 ```
 
 ## Requisitos
@@ -257,7 +275,9 @@ Endpoints locales predeterminados:
 - `POST /api/v1/estimate/stream` (SSE; header `Accept: text/event-stream`)
 - `POST /api/v1/ingestion/runs` (202 — dispara ingesta en background)
 - `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
-- `POST /api/v1/embeddings/ingest` (chunking estructural + embeddings en memoria)
+- `POST /embeddings/ingest` (chunking estructural + embeddings en memoria)
+- `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query)
+- `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 
 Con Postgres en marcha (`docker compose up` aplica `alembic upgrade head` al arrancar la API):
 
@@ -292,31 +312,64 @@ uv run python -m app.ingestion.catalog.inspect data/seed
 uv run python -m app.ingestion.catalog.loader data/catalog/catalog.yaml
 ```
 
-## Sesión 7 — embedding pipeline
+## Sesión 7 — embedding pipeline y framework RAG
 
-El pipeline mínimo de embeddings convierte presupuestos JSON en chunks
-estructurales, genera embeddings con OpenAI y devuelve los vectores en memoria.
-No persiste nada todavía; pgvector queda para la siguiente sesión.
+El módulo `app/generation/rag/` convierte presupuestos JSON en chunks, genera
+embeddings con OpenAI y expone comparación de **8 estrategias de chunking**
+(structural, fixed_size, recursive, sentence_window, semantic, propositional,
+contextual_retrieval, hierarchical). Nada se persiste todavía; pgvector queda
+para la Sesión 8.
 
-Requisito en `.env`:
+Requisitos en `.env`:
 
 ```env
 OPENAI_API_KEY=your_key_here
 EMBEDDING_MODEL=text-embedding-3-small
+# Opcional: estrategias LLM-backed
+PROPOSITIONAL_CHUNKER_MODEL=gpt-4o-mini
+CONTEXTUAL_CHUNKER_MODEL=claude-sonnet-4-5
+ANTHROPIC_API_KEY=your_key_here   # solo para contextual_retrieval
 ```
 
-Invocar el endpoint con el sample de 15 presupuestos:
+### Ingest (structural)
 
 ```bash
-curl -s -X POST http://localhost:8000/api/v1/embeddings/ingest \
+curl -s -X POST http://localhost:8000/embeddings/ingest \
   -H 'Content-Type: application/json' \
   -d "{\"budgets\":$(cat data/budgets_sample.json)}" | jq '.stats'
 ```
 
-Salida esperada: `total_budgets=15`, `total_chunks` igual al número de
-componentes, `total_tokens > 0` y `estimated_cost_usd` en céntimos.
+Salida esperada: `total_budgets=15`, `total_chunks` = nº de componentes,
+`total_tokens > 0`, `estimated_cost_usd` en céntimos, cada chunk con
+`embedding` de 1536 floats.
 
-Comparar dos textos por similitud coseno fuera del contenedor:
+### Comparar estrategias de chunking
+
+```bash
+curl -s -X POST http://localhost:8000/embeddings/compare \
+  -H 'Content-Type: application/json' \
+  -d "{\"budgets\":$(cat data/budgets_sample.json),\"queries\":$(cat data/test_queries.json),\"strategies\":[\"structural\",\"recursive\",\"hierarchical\"],\"top_k\":3}" | jq '.stats_per_strategy'
+```
+
+CLI offline (misma lógica en memoria):
+
+```bash
+uv run python scripts/compare_chunkers.py \
+  --strategies structural,recursive,hierarchical \
+  --queries all --show-stats
+```
+
+Con reporte Markdown:
+
+```bash
+uv run python scripts/compare_chunkers.py \
+  --strategies all --queries all --show-stats --show-cost \
+  --output app/generation/rag/COMPARISON_REPORT.md
+```
+
+### Similitud coseno entre dos textos
+
+Fuera del contenedor:
 
 ```bash
 uv run python scripts/compare.py \
@@ -332,20 +385,51 @@ docker compose exec api python scripts/compare.py \
   --text-b "Authorization service with JWT tokens for digital banking"
 ```
 
-El script calcula el coseno a mano con `math`: producto escalar dividido por las
-normas de ambos vectores.
+El coseno se calcula con `app/generation/rag/analysis/similarity.py` (stdlib,
+sin numpy).
+
+### Runtime config de modelos
+
+Cambiar el modelo primario sin reiniciar (requiere Redis):
+
+```bash
+curl -s -X PUT http://localhost:8000/api/v1/config/models \
+  -H 'Content-Type: application/json' \
+  -d '{"models":{"PRIMARY_MODEL":"gpt-4o"}}' | jq '.models.PRIMARY_MODEL'
+
+# Reset al default de .env
+curl -s -X PUT http://localhost:8000/api/v1/config/models \
+  -H 'Content-Type: application/json' \
+  -d '{"models":{"PRIMARY_MODEL":null}}' | jq '.models.PRIMARY_MODEL'
+```
+
+`EMBEDDING_MODEL` es read-only (cambiarlo invalidaría vectores almacenados).
 
 ## Ejecutar la app de Streamlit
 
 ```bash
-uv run streamlit run streamlit_app.py
+uv run streamlit run streamlit_ui/home.py
 ```
 
-De forma predeterminada, la app de Streamlit apunta a `http://localhost:8000/api/v1`.
+La app multipage incluye:
 
-Puedes sobrescribir esto mediante la clave secreta de Streamlit:
+| Página | Rol |
+|--------|-----|
+| **Home** (`streamlit_ui/home.py`) | Tarjetas de navegación; sidebar con modelo primario efectivo |
+| **Estimación** | `POST /api/v1/estimate` + histórico local |
+| **Conversación** | Sesiones, adjuntos, ACB + histórico de `chat_sessions` |
+| **RAG Lab** | `POST /embeddings/compare` sobre `data/budgets_sample.json` |
+| **Ajustes IA** | `GET/PUT /api/v1/config/models` (overrides runtime en Redis) |
 
-- `ESTIMATION_API_BASE_URL`
+Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`).
+En Docker Compose el volumen `./streamlit_ui` conserva el histórico al recrear el contenedor.
+
+Variables de entorno del frontend:
+
+- `ESTIMATION_API_BASE_URL` — default `http://localhost:8000/api/v1`
+- `STREAMLIT_DB_PATH` — default `streamlit_ui/data/frontend.db`
+
+También puedes sobrescribir `ESTIMATION_API_BASE_URL` vía `.streamlit/secrets.toml`.
 
 ## Modelo de solicitud de la API
 
@@ -643,7 +727,7 @@ curl -X POST "http://localhost:8000/api/v1/sessions/{session_id}/estimate-acb" \
 curl "http://localhost:8000/api/v1/sessions/{session_id}"
 ```
 
-Streamlit (`streamlit_app.py`): selector de tier, toggle ACB, panel de traza y tabla de fases.
+Streamlit (`streamlit_ui/pages/2_Conversacion.py`): selector de tier, toggle ACB, panel de traza y tabla de fases.
 
 ### Sesión 6: ingesta, catálogo y PII/GDPR
 
