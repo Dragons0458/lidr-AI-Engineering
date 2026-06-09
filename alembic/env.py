@@ -11,11 +11,13 @@ from __future__ import annotations
 
 from logging.config import fileConfig
 
+import pgvector.sqlalchemy
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 from app.config import get_settings
 from app.foundation.persistence.models import Base  # noqa: F401 — ensure models are imported
+import app.generation.rag.store.models  # noqa: F401 — register documents/chunks in Base.metadata
 
 config = context.config
 
@@ -47,6 +49,7 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
     with connectable.connect() as connection:
+        connection.dialect.ischema_names["vector"] = pgvector.sqlalchemy.Vector
         context.configure(connection=connection, target_metadata=target_metadata)
         with context.begin_transaction():
             context.run_migrations()
