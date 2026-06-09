@@ -78,8 +78,9 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 ### Endpoints principales:
 - POST /api/v1/estimate → Generar estimación
 - POST /api/v1/estimate/stream → Generar estimación en streaming
-- POST /embeddings/ingest → Generar chunks y embeddings en memoria
-- POST /embeddings/compare → Comparar estrategias de chunking
+- POST /embeddings/ingest → Ingestar presupuesto en Postgres + pgvector
+- POST /embeddings/search → Búsqueda semántica por distancia coseno (SQL)
+- POST /embeddings/compare → Comparar estrategias de chunking (en memoria)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /health → Estado del servicio
 - POST /sessions → Crear sesión en memoria
