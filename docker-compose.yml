@@ -14,6 +14,15 @@ services:
 
   postgres:
     image: pgvector/pgvector:pg16
+    # In production, scale shared_buffers (~25% RAM) and effective_cache_size (~75% RAM).
+    shm_size: 1gb
+    command: >
+      postgres
+      -c shared_buffers=512MB
+      -c effective_cache_size=1536MB
+      -c work_mem=64MB
+      -c maintenance_work_mem=512MB
+      -c max_parallel_maintenance_workers=2
     environment:
       POSTGRES_USER: estimator
       POSTGRES_PASSWORD: estimator
@@ -44,6 +53,8 @@ services:
       - ./data:/app/data
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
+      - ./scripts:/app/scripts
+      - ./tests:/app/tests
     command: >
       sh -c "alembic upgrade head &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
