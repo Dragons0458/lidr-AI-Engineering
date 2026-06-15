@@ -113,8 +113,8 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   (`POST /embeddings/compare`), runtime config de modelos
   (`GET/PUT /api/v1/config/models`) y CLIs de similitud coseno / comparación.
 - **Sesión 8**: persistencia vectorial en Postgres + pgvector (`documents` + `chunks`),
-  ingesta transaccional (`POST /embeddings/ingest`) y búsqueda semántica por SQL
-  (`POST /embeddings/search`, distancia coseno sin índice vectorial todavía).
+  ingesta transaccional (`POST /embeddings/ingest`), búsqueda semántica (`POST /search`,
+  distancia coseno full-precision) y scripts live de índices HNSW/halfvec.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -150,7 +150,8 @@ app/
     estimations.py               # POST /api/v1/estimate (+ stream)
     sessions.py                  # Sesiones conversacionales + ACB
     ingestion.py                 # POST /ingestion/runs, GET /ingestion/jobs/{id}
-    embeddings.py                # POST /embeddings/ingest + /search (S08) + /compare (S07)
+    embeddings.py                # POST /embeddings/ingest + /compare (S07/S08)
+    search.py                    # POST /search — búsqueda semántica (S08)
     config.py                    # GET/PUT /api/v1/config/models (S07)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
@@ -171,6 +172,9 @@ app/
       analysis/                  # cosine_similarity + ChunkingComparator
       embedding/                 # OpenAIEmbedder
       store/models.py            # DocumentRow + ChunkRow (pgvector, S08)
+      store/repository.py        # ChunkStore — CRUD + cosine search (S08)
+      ingest_service.py          # RagIngestService — transacción única (S08)
+      retriever.py               # SemanticRetriever — embed + SQL ranking (S08)
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
 data/
@@ -181,7 +185,14 @@ data/
 scripts/
   compare.py                     # Coseno entre dos textos (S07)
   compare_chunkers.py            # Comparación multi-estrategia en memoria (S07)
-  query_examples.py              # Cinco queries semánticas contra /embeddings/search (S08)
+  query_examples.py              # Cinco queries semánticas contra POST /search (S08)
+  s08_common.py                  # Helpers compartidos scripts live S08
+  measure_baseline_s08.py        # Latencia SQL baseline (antes/después HNSW)
+  sweep_ef_search_s08.py         # Barrido hnsw.ef_search (recall vs latencia)
+  compare_indexes_s08.py         # vector vs halfvec HNSW
+  report_index_sizes_s08.py      # Tamaños y uso de índices
+  insert_synthetic_chunks_s08.py # Corpus sintético para demos de mantenimiento
+  sql_s08/                       # 6 scripts SQL (HNSW, halfvec, mantenimiento)
   preflight_s06.py
   demo_cleaning_s06.py
   demo_pii_s06.py
@@ -281,7 +292,7 @@ Endpoints locales predeterminados:
 - `POST /api/v1/ingestion/runs` (202 — dispara ingesta en background)
 - `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
 - `POST /embeddings/ingest` (chunking estructural + embeddings → Postgres/pgvector)
-- `POST /embeddings/search` (búsqueda semántica por distancia coseno en SQL)
+- `POST /search` (búsqueda semántica por distancia coseno en SQL)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 
@@ -324,7 +335,7 @@ El módulo `app/generation/rag/` convierte presupuestos JSON en chunks, genera
 embeddings con OpenAI y expone comparación de **8 estrategias de chunking**
 (structural, fixed_size, recursive, sentence_window, semantic, propositional,
 contextual_retrieval, hierarchical). La ingesta persistente y la búsqueda
-semántica viven en la Sesión 8 (`POST /embeddings/ingest`, `POST /embeddings/search`).
+semántica viven en la Sesión 8 (`POST /embeddings/ingest`, `POST /search`).
 
 Requisitos en `.env`:
 
@@ -399,16 +410,17 @@ curl -s -X PUT http://localhost:8000/api/v1/config/models \
 
 `EMBEDDING_MODEL` es read-only (cambiarlo invalidaría vectores almacenados).
 
-## Sesión 8 — pgvector y búsqueda semántica
+## Sesión 8 — pgvector, búsqueda semántica e índices HNSW
 
 La ingesta deja de devolver vectores por HTTP: cada presupuesto se persiste como
 un `document` con sus `chunks` (cada uno con embedding `vector(1536)`) en una
-**única transacción** async. La búsqueda embebe la query y ordena por
-`embedding <=> query_vector` (distancia coseno) con **sequential scan** — sin
-índice HNSW/IVFFlat todavía (baseline para medir en directo).
+**única transacción** async (`RagIngestService` + `ChunkStore`). La búsqueda
+embebe la query y ordena por `embedding <=> query_vector` (distancia coseno
+full-precision) vía `SemanticRetriever` y el endpoint `POST /search`.
 
 Migración: `alembic/versions/0002_vector_schema.py` (`CREATE EXTENSION vector`,
-tablas `documents` + `chunks`, índice GIN sobre `metadata`).
+tablas `documents` + `chunks`, índice GIN sobre `metadata`). El índice HNSW **no**
+está en Alembic — se crea manualmente en la sesión live (`scripts/sql_s08/`).
 
 ### Ingest (persistente)
 
@@ -419,7 +431,7 @@ curl -s -X POST http://localhost:8000/embeddings/ingest \
   -H 'Content-Type: application/json' \
   -d "{\"source_path\":\"data/budgets/s07-fin-001.json\",\"document_type\":\"historical_budget\",\"content\":$BUDGET}" | jq
 
-# Reintento con el mismo source_path → 409 Conflict
+# Reintento con el mismo source_path → 409 Conflict (top-level: detail + document_id)
 ```
 
 Salida esperada (200): `document_id`, `chunks_created`, `embedding_dimension=1536`,
@@ -428,7 +440,7 @@ Salida esperada (200): `document_id`, `chunks_created`, `embedding_dimension=153
 ### Search (semántica por SQL)
 
 ```bash
-curl -s -X POST http://localhost:8000/embeddings/search \
+curl -s -X POST http://localhost:8000/search \
   -H 'Content-Type: application/json' \
   -d '{"query":"OAuth JWT authentication fintech","k":5}' | jq
 ```
@@ -439,10 +451,43 @@ Ingesta el corpus completo y ejecuta cinco queries de validación:
 
 ```bash
 docker compose run --rm api python scripts/query_examples.py --ingest
-# Salida guardada en output_examples.txt (deliverable pre-sesión)
-docker compose run --rm api python scripts/query_examples.py --ingest \
-  > output_examples.txt 2>&1
 ```
+
+### Scripts live (HNSW, halfvec, mantenimiento)
+
+Con el stack levantado (`docker compose up -d postgres redis api`):
+
+```bash
+# Baseline sin índice vectorial
+docker compose run --rm api python scripts/measure_baseline_s08.py
+
+# Crear índice HNSW (manual, no Alembic)
+docker compose exec -T postgres psql -U estimator -d estimator < scripts/sql_s08/01_create_hnsw.sql
+
+# Re-medir baseline (comparar before/after)
+docker compose run --rm api python scripts/measure_baseline_s08.py
+
+# Barrido ef_search (recall vs latencia)
+docker compose run --rm api python scripts/sweep_ef_search_s08.py
+
+# Índice halfvec + comparación
+docker compose exec -T postgres psql -U estimator -d estimator < scripts/sql_s08/03_create_halfvec.sql
+docker compose run --rm api python scripts/compare_indexes_s08.py
+
+# Tamaños de índices y monitorización
+docker compose run --rm api python scripts/report_index_sizes_s08.py
+docker compose exec -T postgres psql -U estimator -d estimator < scripts/sql_s08/04_monitoring_queries.sql
+
+# Mantenimiento (tras insertar chunks sintéticos)
+docker compose run --rm api python scripts/insert_synthetic_chunks_s08.py
+docker compose exec -T postgres psql -U estimator -d estimator < scripts/sql_s08/05_maintenance_cycle.sql
+
+# Revertir ensayo live
+docker compose exec -T postgres psql -U estimator -d estimator < scripts/sql_s08/99_revert_live_session.sql
+```
+
+Postgres en Compose usa `shm_size: 1gb` y tuning conservador para la construcción
+paralela de índices HNSW.
 
 ### Decisiones de esquema (justificación)
 
