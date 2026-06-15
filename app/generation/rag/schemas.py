@@ -49,7 +49,7 @@ class EmbeddedChunk(Chunk):
 class IngestRequest(BaseModel):
     source_path: str
     document_type: str
-    content: dict[str, Any]
+    content: Budget
 
 
 class IngestResponse(BaseModel):
@@ -61,10 +61,10 @@ class IngestResponse(BaseModel):
 
 class SearchRequest(BaseModel):
     query: str
-    k: int = Field(default=5, ge=1, le=100)
+    k: int = Field(default=5, ge=1, le=50)
 
 
-class SearchResult(BaseModel):
+class SearchHit(BaseModel):
     chunk_id: int
     document_id: int
     chunk_type: str
@@ -77,4 +77,4 @@ class SearchResponse(BaseModel):
     query: str
     k: int
     search_time_ms: int
-    results: list[SearchResult]
+    results: list[SearchHit]

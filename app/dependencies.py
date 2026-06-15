@@ -26,7 +26,11 @@ from app.generation.rag.chunking.strategies import (
     SemanticChunker,
     SentenceWindowChunker,
 )
+from app.foundation.persistence.async_database import get_async_session_factory
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
+from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.retriever import SemanticRetriever
+from app.generation.rag.store.repository import ChunkStore
 from app.ingestion.catalog import DataCatalog, load_catalog
 from app.ingestion.loaders.filesystem import FileSystemLoader
 from app.ingestion.parsers.registry import ParserRegistry, default_registry
@@ -82,6 +86,36 @@ def get_embedder() -> OpenAIEmbedder | None:
         log.warning("embedder_disabled", reason="no_openai_key")
         return None
     return OpenAIEmbedder(client=client, model=settings.EMBEDDING_MODEL)
+
+
+@lru_cache
+def get_chunk_store() -> ChunkStore:
+    return ChunkStore()
+
+
+@lru_cache
+def get_rag_ingest_service() -> RagIngestService | None:
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return RagIngestService(
+        chunker=get_chunker(),
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=get_chunk_store(),
+    )
+
+
+@lru_cache
+def get_semantic_retriever() -> SemanticRetriever | None:
+    embedder = get_embedder()
+    if embedder is None:
+        return None
+    return SemanticRetriever(
+        embedder=embedder,
+        session_factory=get_async_session_factory(),
+        store=get_chunk_store(),
+    )
 
 
 @lru_cache

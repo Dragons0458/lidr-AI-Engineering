@@ -1,110 +1,142 @@
+"""HTTP-level tests for the persisting ``POST /embeddings/ingest`` (Session 8).
+
+We bypass Postgres and OpenAI entirely: ``get_rag_ingest_service`` is overridden
+with an in-memory fake that mimics the service contract (response model +
+``DuplicateDocumentError``). This exercises the router wiring, the literal 409
+shape and the error mapping without infrastructure.
+"""
+
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
-from fastapi import FastAPI
+import pytest
 from fastapi.testclient import TestClient
 
-from app.api.embeddings import router
-from app.dependencies import get_embedder
-from app.foundation.persistence.async_database import get_async_session
-from app.generation.rag.schemas import Chunk, EmbeddedChunk
-
-SAMPLE_BUDGET = {
-    "budget_id": "BUD-001",
-    "client_metadata": {
-        "name": "Demo Bank",
-        "sector": "finance",
-        "country": "Colombia",
-    },
-    "project_summary": "Banking API modernization",
-    "main_technology": "FastAPI",
-    "year": 2025,
-    "total_estimated_hours": 60,
-    "components": [
-        {
-            "component_id": "auth",
-            "name": "Authorization service",
-            "description": "JWT access control for banking APIs.",
-            "tech_stack": ["FastAPI", "JWT"],
-            "estimated_hours": 60,
-            "complexity": "high",
-            "dependencies": [],
-        }
-    ],
-}
-
-INGEST_PAYLOAD = {
-    "source_path": "data/budgets/test_budget.json",
-    "document_type": "historical_budget",
-    "content": SAMPLE_BUDGET,
-}
+from app.dependencies import get_rag_ingest_service
+from app.generation.rag.ingest_service import DuplicateDocumentError
+from app.generation.rag.schemas import IngestResponse
+from app.main import app
 
 
-class FakeEmbedder:
-    model = "text-embedding-3-small"
-
-    def embed_many(self, chunks: list[Chunk]) -> list[EmbeddedChunk]:
-        return [
-            EmbeddedChunk(**chunk.model_dump(), embedding=[0.1] * 1536)
-            for chunk in chunks
-        ]
-
-
-class FakeAsyncSession:
-    def __init__(self, existing_document_id: int | None = None) -> None:
-        self.existing_document_id = existing_document_id
-        self.committed = False
-        self._next_doc_id = 42
-
-    async def scalar(self, _stmt) -> int | None:
-        return self.existing_document_id
-
-    def add(self, obj) -> None:
-        if hasattr(obj, "id") and getattr(obj, "id", None) is None:
-            obj.id = self._next_doc_id
-
-    async def flush(self) -> None:
-        return None
-
-    def add_all(self, _rows) -> None:
-        return None
-
-    async def commit(self) -> None:
-        self.committed = True
+def make_budget_payload() -> dict:
+    return {
+        "budget_id": "BUD-2024-001",
+        "client_metadata": {
+            "name": "FintechCorp",
+            "sector": "finance",
+            "country": "ES",
+        },
+        "project_summary": "Mobile banking API with OAuth 2.0",
+        "main_technology": "ruby_on_rails",
+        "year": 2024,
+        "total_estimated_hours": 120,
+        "components": [
+            {
+                "component_id": "AUTH-001",
+                "name": "OAuth 2.0 backend",
+                "description": "OAuth flows with JWT session management.",
+                "tech_stack": ["ruby_on_rails", "postgresql"],
+                "estimated_hours": 120,
+                "complexity": "high",
+                "dependencies": [],
+            }
+        ],
+    }
 
 
-def _build_client(existing_document_id: int | None = None) -> TestClient:
-    session = FakeAsyncSession(existing_document_id=existing_document_id)
-
-    async def override_session() -> AsyncIterator[FakeAsyncSession]:
-        yield session
-
-    app = FastAPI()
-    app.include_router(router)
-    app.dependency_overrides[get_embedder] = lambda: FakeEmbedder()
-    app.dependency_overrides[get_async_session] = override_session
-    return TestClient(app)
+def make_ingest_payload() -> dict:
+    return {
+        "source_path": "data/budgets_sample.json::BUD-2024-001",
+        "document_type": "historical_budget",
+        "content": make_budget_payload(),
+    }
 
 
-def test_ingest_embeddings_endpoint_persists_and_returns_stats():
-    client = _build_client()
+class FakeRagIngestService:
+    def __init__(self, *, duplicate_of: int | None = None) -> None:
+        self.duplicate_of = duplicate_of
+        self.calls: list[dict] = []
 
-    response = client.post("/embeddings/ingest", json=INGEST_PAYLOAD)
+    async def ingest(self, *, source_path, document_type, budget) -> IngestResponse:
+        self.calls.append(
+            {
+                "source_path": source_path,
+                "document_type": document_type,
+                "budget": budget,
+            }
+        )
+        if self.duplicate_of is not None:
+            raise DuplicateDocumentError(self.duplicate_of)
+        return IngestResponse(
+            document_id=7,
+            chunks_created=1,
+            embedding_dimension=1536,
+            ingestion_time_ms=42,
+        )
+
+
+@pytest.fixture(autouse=True)
+def reset_overrides():
+    yield
+    app.dependency_overrides.clear()
+
+
+def test_ingest_persists_and_returns_contract():
+    fake = FakeRagIngestService()
+    app.dependency_overrides[get_rag_ingest_service] = lambda: fake
+
+    response = TestClient(app).post("/embeddings/ingest", json=make_ingest_payload())
 
     assert response.status_code == 200
     body = response.json()
-    assert body["document_id"] == 42
-    assert body["chunks_created"] == 1
-    assert body["embedding_dimension"] == 1536
-    assert body["ingestion_time_ms"] >= 0
+    assert body == {
+        "document_id": 7,
+        "chunks_created": 1,
+        "embedding_dimension": 1536,
+        "ingestion_time_ms": 42,
+    }
+    assert fake.calls[0]["budget"].budget_id == "BUD-2024-001"
 
 
-def test_ingest_embeddings_endpoint_returns_409_for_duplicate_source_path():
-    client = _build_client(existing_document_id=99)
+def test_ingest_duplicate_returns_409_with_literal_shape():
+    app.dependency_overrides[get_rag_ingest_service] = lambda: FakeRagIngestService(
+        duplicate_of=42
+    )
 
-    response = client.post("/embeddings/ingest", json=INGEST_PAYLOAD)
+    response = TestClient(app).post("/embeddings/ingest", json=make_ingest_payload())
 
     assert response.status_code == 409
-    body = response.json()
-    assert body["detail"]["detail"] == "Document already ingested"
-    assert body["detail"]["document_id"] == 99
+    assert response.json() == {"detail": "Document already ingested", "document_id": 42}
+
+
+def test_ingest_service_unavailable_returns_500():
+    app.dependency_overrides[get_rag_ingest_service] = lambda: None
+
+    response = TestClient(app).post("/embeddings/ingest", json=make_ingest_payload())
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Embedding service is not available."
+
+
+def test_ingest_invalid_budget_returns_422_before_touching_the_service():
+    fake = FakeRagIngestService()
+    app.dependency_overrides[get_rag_ingest_service] = lambda: fake
+    payload = make_ingest_payload()
+    payload["content"].pop("components")
+
+    response = TestClient(app).post("/embeddings/ingest", json=payload)
+
+    assert response.status_code == 422
+    assert fake.calls == []
+
+
+def test_ingest_embedding_failure_returns_500():
+    class ExplodingService(FakeRagIngestService):
+        async def ingest(self, **kwargs):
+            raise RuntimeError("embeddings API down")
+
+    app.dependency_overrides[get_rag_ingest_service] = lambda: ExplodingService()
+
+    response = TestClient(app).post("/embeddings/ingest", json=make_ingest_payload())
+
+    assert response.status_code == 500
+    assert response.json()["detail"] == "Failed to generate embeddings."

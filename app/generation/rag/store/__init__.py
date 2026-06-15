@@ -1,5 +1,6 @@
-"""Vector store — PostgreSQL + pgvector persistence (Session 8).
+"""Vector store ORM models and async repository (Session 8)."""
 
-``models`` defines ``DocumentRow`` and ``ChunkRow``; semantic search lives in
-``POST /embeddings/search``. HNSW/IVFFlat indexes are deferred to the live session.
-"""
+from app.generation.rag.store.models import ChunkRow, DocumentRow
+from app.generation.rag.store.repository import ChunkStore
+
+__all__ = ["ChunkRow", "ChunkStore", "DocumentRow"]

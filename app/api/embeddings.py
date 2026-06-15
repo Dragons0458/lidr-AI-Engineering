@@ -1,201 +1,85 @@
 """HTTP layer for the embedding pipeline.
 
-Thin router: it orchestrates chunker -> embedder -> persistence/search and maps
-failures to status codes. No business logic lives here.
+Thin router: it maps service exceptions to status codes. The chunk → embed →
+persist orchestration lives in ``RagIngestService``; no business logic here.
 """
 
 from __future__ import annotations
 
-import time
-
 import structlog
 from fastapi import APIRouter, Depends, HTTPException
-from fastapi.concurrency import run_in_threadpool
-from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi.responses import JSONResponse
 
-from app.dependencies import ALL_STRATEGIES, build_chunkers, get_chunker, get_embedder
-from app.foundation.persistence.async_database import get_async_session
+from app.dependencies import (
+    ALL_STRATEGIES,
+    build_chunkers,
+    get_embedder,
+    get_rag_ingest_service,
+)
 from app.generation.rag.analysis.comparison import (
     ChunkingComparator,
     CompareRequest,
     CompareResponse,
 )
-from app.generation.rag.chunking.structural import JSONStructuralChunker
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
-from app.generation.rag.schemas import (
-    Budget,
-    IngestRequest,
-    IngestResponse,
-    SearchRequest,
-    SearchResponse,
-    SearchResult,
-)
-from app.generation.rag.store.models import ChunkRow, DocumentRow, EMBEDDING_DIM
+from app.generation.rag.ingest_service import DuplicateDocumentError, RagIngestService
+from app.generation.rag.schemas import IngestRequest, IngestResponse
 
 log = structlog.get_logger()
 
 router = APIRouter(prefix="/embeddings", tags=["embeddings"])
 
 
-@router.post("/ingest", response_model=IngestResponse)
+@router.post(
+    "/ingest",
+    response_model=IngestResponse,
+    responses={409: {"description": "Document already ingested"}},
+)
 async def ingest(
     request: IngestRequest,
-    session: AsyncSession = Depends(get_async_session),
-    chunker: JSONStructuralChunker = Depends(get_chunker),
-    embedder: OpenAIEmbedder | None = Depends(get_embedder),
-) -> IngestResponse:
-    """Chunk a budget, embed every chunk, and persist document + vectors in Postgres."""
-    if embedder is None:
+    service: RagIngestService | None = Depends(get_rag_ingest_service),
+) -> IngestResponse | JSONResponse:
+    """Persist one budget as a document + embedded chunks (one transaction)."""
+    if service is None:
         log.error("embeddings_ingest_failed", reason="embedder_unavailable")
         raise HTTPException(
             status_code=500, detail="Embedding service is not available."
         )
 
-    started = time.perf_counter()
-
-    existing = await session.scalar(
-        select(DocumentRow.id).where(DocumentRow.source_path == request.source_path)
-    )
-    if existing is not None:
-        raise HTTPException(
-            status_code=409,
-            detail={
-                "detail": "Document already ingested",
-                "document_id": existing,
-            },
-        )
-
-    budget = Budget.model_validate(request.content)
-    chunks = chunker.chunk([budget])
     log.info(
         "embeddings_ingest_received",
         source_path=request.source_path,
-        total_chunks=len(chunks),
+        document_type=request.document_type,
     )
-
     try:
-        embedded = await run_in_threadpool(embedder.embed_many, chunks)
-    except Exception as exc:  # noqa: BLE001 — any embedding-API failure becomes a 500.
+        return await service.ingest(
+            source_path=request.source_path,
+            document_type=request.document_type,
+            budget=request.content,
+        )
+    except DuplicateDocumentError as exc:
+        log.info(
+            "embeddings_ingest_duplicate",
+            source_path=request.source_path,
+            document_id=exc.document_id,
+        )
+        return JSONResponse(
+            status_code=409,
+            content={
+                "detail": "Document already ingested",
+                "document_id": exc.document_id,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001 — embedding/DB failures become a 500.
         log.error(
             "embeddings_ingest_failed",
-            reason="embedding_api_error",
+            reason="ingest_error",
             error_type=type(exc).__name__,
             error=str(exc)[:300],
         )
         raise HTTPException(
             status_code=500, detail="Failed to generate embeddings."
         ) from exc
-
-    doc = DocumentRow(
-        source_path=request.source_path,
-        document_type=request.document_type,
-        doc_metadata={
-            "budget_id": budget.budget_id,
-            "sector": budget.client_metadata.sector,
-            "year": budget.year,
-        },
-    )
-    session.add(doc)
-    await session.flush()
-
-    session.add_all(
-        [
-            ChunkRow(
-                document_id=doc.id,
-                chunk_type="budget_component",
-                content=chunk.text,
-                embedding=chunk.embedding,
-                chunk_metadata=chunk.metadata,
-            )
-            for chunk in embedded
-        ]
-    )
-    await session.commit()
-
-    ingestion_time_ms = int((time.perf_counter() - started) * 1000)
-    log.info(
-        "embeddings_ingest_done",
-        document_id=doc.id,
-        chunks_created=len(embedded),
-        ingestion_time_ms=ingestion_time_ms,
-    )
-    return IngestResponse(
-        document_id=doc.id,
-        chunks_created=len(embedded),
-        embedding_dimension=EMBEDDING_DIM,
-        ingestion_time_ms=ingestion_time_ms,
-    )
-
-
-@router.post("/search", response_model=SearchResponse)
-async def search(
-    request: SearchRequest,
-    session: AsyncSession = Depends(get_async_session),
-    embedder: OpenAIEmbedder | None = Depends(get_embedder),
-) -> SearchResponse:
-    """Semantic search over persisted chunks using cosine distance in SQL."""
-    if embedder is None:
-        log.error("embeddings_search_failed", reason="embedder_unavailable")
-        raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
-        )
-
-    started = time.perf_counter()
-
-    try:
-        query_vector = await run_in_threadpool(embedder.embed_one, request.query)
-    except Exception as exc:  # noqa: BLE001
-        log.error(
-            "embeddings_search_failed",
-            reason="embedding_api_error",
-            error_type=type(exc).__name__,
-            error=str(exc)[:300],
-        )
-        raise HTTPException(
-            status_code=500, detail="Failed to embed search query."
-        ) from exc
-
-    distance_expr = ChunkRow.embedding.cosine_distance(query_vector)
-    stmt = (
-        select(
-            ChunkRow.id,
-            ChunkRow.document_id,
-            ChunkRow.chunk_type,
-            ChunkRow.content,
-            ChunkRow.chunk_metadata,
-            distance_expr.label("distance"),
-        )
-        .order_by(distance_expr)
-        .limit(request.k)
-    )
-    rows = (await session.execute(stmt)).all()
-
-    search_time_ms = int((time.perf_counter() - started) * 1000)
-    results = [
-        SearchResult(
-            chunk_id=row.id,
-            document_id=row.document_id,
-            chunk_type=row.chunk_type,
-            content=row.content,
-            distance=float(row.distance),
-            metadata=row.chunk_metadata,
-        )
-        for row in rows
-    ]
-    log.info(
-        "embeddings_search_done",
-        query=request.query[:80],
-        k=request.k,
-        hits=len(results),
-        search_time_ms=search_time_ms,
-    )
-    return SearchResponse(
-        query=request.query,
-        k=request.k,
-        search_time_ms=search_time_ms,
-        results=results,
-    )
 
 
 @router.post("/compare", response_model=CompareResponse)
@@ -206,7 +90,7 @@ def compare(
     """Run several chunking strategies over the same budgets and compare them.
 
     Returns per-strategy corpus stats and, if queries are given, the top-k
-    chunks each strategy retrieves. Nothing is persisted (in-memory only).
+    chunks each strategy retrieves. Nothing is persisted (Session 8 territory).
     """
     if embedder is None:
         log.error("embeddings_compare_failed", reason="embedder_unavailable")

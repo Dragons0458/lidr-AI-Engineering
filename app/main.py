@@ -10,6 +10,7 @@ from app.api import config as config_api
 from app.api.embeddings import router as embeddings_router
 from app.api.estimations import router as estimation_router
 from app.api.ingestion import router as ingestion_router
+from app.api.search import router as search_router
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
 
@@ -79,7 +80,7 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /api/v1/estimate → Generar estimación
 - POST /api/v1/estimate/stream → Generar estimación en streaming
 - POST /embeddings/ingest → Ingestar presupuesto en Postgres + pgvector
-- POST /embeddings/search → Búsqueda semántica por distancia coseno (SQL)
+- POST /search → Búsqueda semántica por distancia coseno (SQL)
 - POST /embeddings/compare → Comparar estrategias de chunking (en memoria)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /health → Estado del servicio
@@ -102,6 +103,7 @@ app.include_router(estimation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(ingestion_router)
 app.include_router(embeddings_router)
+app.include_router(search_router)
 app.include_router(config_api.router)
 
 
