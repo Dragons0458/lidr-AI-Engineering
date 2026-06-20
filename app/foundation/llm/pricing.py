@@ -5,6 +5,7 @@ PRICING = {
     "gpt-5.4-mini": {"input": 0.75, "output": 4.50},
     "gpt-5.4": {"input": 2.50, "output": 15.00},
     "gpt-5.4-nano": {"input": 0.20, "output": 1.25},
+    "gpt-5": {"input": 1.25, "output": 10.00},
     "gpt-5-mini": {"input": 0.25, "output": 2.00},
     "gpt-5-nano": {"input": 0.05, "output": 0.40},
     # Anthropic (USD per 1M tokens)

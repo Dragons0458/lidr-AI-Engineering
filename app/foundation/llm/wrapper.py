@@ -59,6 +59,12 @@ def provider_from_model(model: str) -> str:
     return "unknown"
 
 
+def is_reasoning_model(model: str) -> bool:
+    """True for OpenAI reasoning models that accept ``reasoning_effort``."""
+    name = _normalise_model_name(model).lower()
+    return name.startswith("gpt-5") or name.startswith("o1") or name.startswith("o3")
+
+
 def completion(**kwargs: Any) -> Any:
     """Module-level seam for tests (patch ``app.foundation.llm.wrapper.completion``)."""
     return litellm_completion(**kwargs)
@@ -235,6 +241,80 @@ class LLMWrapper:
         # disable it for structured JSON so the budget goes to the visible response.
         if provider in ("openai", "google"):
             call_kwargs["reasoning_effort"] = "none"
+        try:
+            instance = _get_instructor_client(resolved_model).chat.completions.create(
+                **call_kwargs
+            )
+        except Exception as exc:
+            latency_ms = int((time.perf_counter() - started_at) * 1000)
+            log.error(
+                "llm_structured_call_failed",
+                error_type=type(exc).__name__,
+                error=str(exc),
+                latency_ms=latency_ms,
+            )
+            raise
+
+        latency_ms = int((time.perf_counter() - started_at) * 1000)
+        meta = {
+            "model": _normalise_model_name(resolved_model),
+            "provider": provider_from_model(resolved_model),
+            "latency_ms": latency_ms,
+            "usage": {
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "total_tokens": 0,
+            },
+            "cost_usd": 0.0,
+            "cache_hit": False,
+        }
+        log.info(
+            "llm_structured_call_completed",
+            model=meta["model"],
+            latency_ms=latency_ms,
+        )
+        return instance, meta
+
+    def complete_structured(
+        self,
+        *,
+        system_prompt: str,
+        user_message: str,
+        response_model: type[T],
+        model_override: str | None = None,
+        max_tokens: int = 4000,
+        max_retries: int = 2,
+        reasoning_effort: str | None = None,
+    ) -> tuple[T, dict[str, Any]]:
+        """Structured completion from system/user prompts (Session 9 RAG)."""
+        resolved_model = model_override or self.primary_model
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_message},
+        ]
+        instructor_mode = structured_instructor_mode(resolved_model)
+        log.info(
+            "llm_structured_call_started",
+            model=resolved_model,
+            response_model=response_model.__name__,
+            instructor_mode=instructor_mode.value,
+        )
+        started_at = time.perf_counter()
+        call_kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "messages": messages,
+            "response_model": response_model,
+            "max_tokens": max_tokens,
+            "max_retries": max_retries,
+            "timeout": self.timeout,
+        }
+        provider = provider_from_model(resolved_model)
+        if reasoning_effort is not None:
+            call_kwargs["reasoning_effort"] = reasoning_effort
+        else:
+            call_kwargs["temperature"] = 0
+            if provider in ("openai", "google"):
+                call_kwargs["reasoning_effort"] = "none"
         try:
             instance = _get_instructor_client(resolved_model).chat.completions.create(
                 **call_kwargs

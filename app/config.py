@@ -49,12 +49,25 @@ class Settings(BaseSettings):
         default_factory=lambda: [
             "gpt-4o-mini",
             "gpt-4o",
+            "gpt-5",
+            "gpt-5-mini",
             "claude-haiku-4-5-20251001",
             "claude-sonnet-4-5",
         ]
     )
     PROPOSITIONAL_CHUNKER_MODEL: str = "gpt-4o-mini"
     CONTEXTUAL_CHUNKER_MODEL: str = "claude-sonnet-4-5"
+    # --- Session 9: RAG end-to-end (transcript → grounded estimate) ---
+    REFORMULATION_MODEL: str = "gpt-5-mini"
+    GENERATION_MODEL: str = "gpt-5"
+    GENERATION_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "high"
+    GENERATION_MAX_TOKENS: int = 64000
+    RETRIEVAL_TOP_K: int = 10
+    RETRIEVAL_DISTANCE_THRESHOLD: float = 0.6
+    MAX_CONTEXT_TOKENS: int = 16384
+    IDEMPOTENCY_TTL: int = 86400
+    RETRIEVAL_API_KEY: str | None = None
+    ESTIMATE_API_KEY: str | None = None
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

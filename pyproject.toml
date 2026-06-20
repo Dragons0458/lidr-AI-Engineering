@@ -48,7 +48,10 @@ dependencies = [
     "anthropic>=0.40",
     # Session 8 — vector database (pgvector + async persistence)
     "asyncpg>=0.29",
+    "greenlet>=3.0",
     "pgvector>=0.3",
+    # Session 9 — RAG end-to-end API rate limiting
+    "slowapi>=0.1.9",
 ]
 
 [dependency-groups]
@@ -57,6 +60,7 @@ dev = [
     "deepeval>=4.0.2",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
+    "pytest-asyncio>=0.24",
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -65,6 +69,7 @@ dev = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+asyncio_mode = "auto"
 markers = [
     "eval: LLM evaluation tests that may require external model access",
     "slow: slower tests that are not intended for the tight feedback loop",
