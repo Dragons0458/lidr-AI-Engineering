@@ -46,6 +46,24 @@ def get_api_root_url(base_url: str | None = None) -> str:
     return base
 
 
+def get_estimate_api_key() -> str:
+    """Return the Session 9 estimate API key from env or Streamlit secrets."""
+    env_key = os.getenv("ESTIMATE_API_KEY", "").strip()
+    try:
+        return str(st.secrets.get("ESTIMATE_API_KEY", env_key))
+    except StreamlitSecretNotFoundError:
+        return env_key
+
+
+def get_retrieval_api_key() -> str:
+    """Return the Session 9 retrieval API key from env or Streamlit secrets."""
+    env_key = os.getenv("RETRIEVAL_API_KEY", "").strip()
+    try:
+        return str(st.secrets.get("RETRIEVAL_API_KEY", env_key))
+    except StreamlitSecretNotFoundError:
+        return env_key
+
+
 @st.cache_data(ttl=15)
 def fetch_effective_primary_model(api_base_url: str) -> str | None:
     try:
@@ -111,6 +129,12 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
         detail = parse_error_detail(exc.response)
         if status == 400:
             return f"**Solicitud rechazada (400)**\n\n{detail}"
+        if status == 401:
+            return (
+                "**No autorizado (401)** — clave API inválida o ausente.\n\n"
+                f"{detail}\n\n"
+                "_Configura `ESTIMATE_API_KEY` / `RETRIEVAL_API_KEY` en `.env` o secrets._"
+            )
         if status == 422:
             return (
                 "**Solicitud rechazada (422)** — la API no pudo validar el mensaje.\n\n"
@@ -120,6 +144,14 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
             )
         if status == 415:
             return f"**Tipo de archivo no admitido (415)**\n\n{detail}"
+        if status == 429:
+            retry = exc.response.headers.get("Retry-After", "60")
+            return (
+                f"**Límite de peticiones (429)** — espera {retry}s antes de reintentar.\n\n"
+                f"{detail}"
+            )
+        if status == 502:
+            return f"**Error del pipeline LLM (502)**\n\n{detail}"
         if status == 500:
             return f"**Error del servidor (500)**\n\n{detail}"
         return f"**Error HTTP {status}**\n\n{detail}"

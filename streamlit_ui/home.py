@@ -43,6 +43,9 @@ with col1:
     st.page_link("pages/3_RAG_Lab.py", label="RAG Chunking Lab", icon="🧪")
     st.caption("Compara 8 estrategias de chunking sobre el corpus de presupuestos.")
 
+    st.page_link("pages/5_RAG_Estimacion.py", label="RAG Estimación", icon="📋")
+    st.caption("Wizard transcript → estimación fundamentada (Sesión 9).")
+
 with col2:
     st.page_link("pages/2_Conversacion.py", label="Conversación", icon="💬")
     st.caption("Sesiones, adjuntos, memoria comprimida y Actor-Critic-Boss.")
