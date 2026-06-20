@@ -1,15 +1,21 @@
 from contextlib import asynccontextmanager
 from datetime import datetime
 import logging
+from uuid import uuid4
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
+from slowapi.errors import RateLimitExceeded
 
 from app.api import config as config_api
 from app.api.embeddings import router as embeddings_router
 from app.api.estimations import router as estimation_router
 from app.api.ingestion import router as ingestion_router
+from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
+from app.api.routers.estimate import router as estimate_router
+from app.api.routers.estimate_stages import router as estimate_stages_router
+from app.api.routers.retrieval import router as retrieval_router
 from app.api.search import router as search_router
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
@@ -82,6 +88,9 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /embeddings/ingest → Ingestar presupuesto en Postgres + pgvector
 - POST /search → Búsqueda semántica por distancia coseno (SQL)
 - POST /embeddings/compare → Comparar estrategias de chunking (en memoria)
+- POST /v1/retrieval/search → Búsqueda filtrada con API key (S09)
+- POST /v1/estimate/from-transcript → Estimación fundamentada (S09)
+- POST /v1/estimate/stages/* → Wizard RAG por etapas (S09)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /health → Estado del servicio
 - POST /sessions → Crear sesión en memoria
@@ -99,12 +108,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+
+@app.middleware("http")
+async def request_id_middleware(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID") or str(uuid4())
+    request.state.request_id = request_id
+    structlog.contextvars.bind_contextvars(request_id=request_id)
+    try:
+        response = await call_next(request)
+    finally:
+        structlog.contextvars.unbind_contextvars("request_id")
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+
 app.include_router(estimation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(ingestion_router)
 app.include_router(embeddings_router)
 app.include_router(search_router)
 app.include_router(config_api.router)
+app.include_router(retrieval_router)
+app.include_router(estimate_router)
+app.include_router(estimate_stages_router)
 
 
 @app.get("/health")
