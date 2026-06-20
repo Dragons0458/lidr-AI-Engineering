@@ -79,7 +79,7 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + Ajustes IA):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Ajustes IA):
 
 ```bash
 uv run streamlit run streamlit_ui/home.py
@@ -115,6 +115,10 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - **Sesión 8**: persistencia vectorial en Postgres + pgvector (`documents` + `chunks`),
   ingesta transaccional (`POST /embeddings/ingest`), búsqueda semántica (`POST /search`,
   distancia coseno full-precision) y scripts live de índices HNSW/halfvec.
+- **Sesión 9**: pipeline RAG end-to-end (`transcript → reformulate → retrieve → assemble →
+  generate`), endpoints autenticados (`POST /v1/retrieval/search`, `POST /v1/estimate/from-transcript`,
+  `POST /v1/estimate/stages/*`), idempotencia Redis, rate limiting por API key y wizard
+  Streamlit de 6 etapas.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -134,6 +138,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - RedisVL + NumPy (caché semántico)
 - OpenAI SDK + tiktoken + langchain-text-splitters + nltk + anthropic (embeddings y chunking)
 - SQLAlchemy 2.0 + Alembic + psycopg + asyncpg + pgvector (Postgres)
+- slowapi (rate limiting Session 9)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -152,6 +157,13 @@ app/
     ingestion.py                 # POST /ingestion/runs, GET /ingestion/jobs/{id}
     embeddings.py                # POST /embeddings/ingest + /compare (S07/S08)
     search.py                    # POST /search — búsqueda semántica (S08)
+    security.py                  # API keys X-API-Key (S09)
+    rate_limiting.py             # slowapi limiter (S09)
+    deps.py                      # get_request_id (S09)
+    routers/                     # /v1/retrieval + /v1/estimate (S09)
+      retrieval.py
+      estimate.py
+      estimate_stages.py
     config.py                    # GET/PUT /api/v1/config/models (S07)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
@@ -174,7 +186,11 @@ app/
       store/models.py            # DocumentRow + ChunkRow (pgvector, S08)
       store/repository.py        # ChunkStore — CRUD + cosine search (S08)
       ingest_service.py          # RagIngestService — transacción única (S08)
-      retriever.py               # SemanticRetriever — embed + SQL ranking (S08)
+      retriever.py               # SemanticRetriever + search_chunks (S08/S09)
+      estimator.py               # estimate_from_transcript orchestrator (S09)
+      query_reformulator.py      # transcript → EstimationQuery (S09)
+      context_assembler.py       # <source> XML block + token budget (S09)
+      idempotency.py             # Redis/in-memory idempotency store (S09)
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
 data/
@@ -208,6 +224,7 @@ streamlit_ui/
     2_Conversacion.py
     3_RAG_Lab.py
     4_Ajustes_IA.py
+    5_RAG_Estimacion.py          # Wizard RAG 6 etapas (S09)
 tests/unit/{api,domain,foundation,generation}/…
 ```
 
@@ -263,6 +280,17 @@ INGESTION_DATA_ROOT=data/seed
 PRESIDIO_SPACY_MODEL=es_core_news_md
 PSEUDONYM_FAKER_LOCALE=es_ES
 PSEUDONYM_HASH_SALT=change-me-in-prod
+# Session 9 — RAG end-to-end (API keys + model knobs)
+RETRIEVAL_API_KEY=demo-retrieval-key
+ESTIMATE_API_KEY=demo-estimate-key
+REFORMULATION_MODEL=gpt-5-mini
+GENERATION_MODEL=gpt-5
+GENERATION_REASONING_EFFORT=high
+GENERATION_MAX_TOKENS=64000
+RETRIEVAL_TOP_K=10
+RETRIEVAL_DISTANCE_THRESHOLD=0.6
+MAX_CONTEXT_TOKENS=16384
+IDEMPOTENCY_TTL=86400
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -293,6 +321,9 @@ Endpoints locales predeterminados:
 - `GET /api/v1/ingestion/jobs/{job_id}` (estado del job)
 - `POST /embeddings/ingest` (chunking estructural + embeddings → Postgres/pgvector)
 - `POST /search` (búsqueda semántica por distancia coseno en SQL)
+- `POST /v1/retrieval/search` (búsqueda filtrada con `X-API-Key`, S09)
+- `POST /v1/estimate/from-transcript` (estimación fundamentada, S09)
+- `POST /v1/estimate/stages/{reformulate,retrieve,assemble,generate}` (wizard, S09)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 
@@ -503,6 +534,76 @@ re-embeber todo. `embedding` es nullable para permitir ingesta asíncrona futura
 (insertar chunk y rellenar vector después), aunque este ejercicio persiste ambos
 atómicamente.
 
+## Sesión 9 — RAG end-to-end (transcript → estimación fundamentada)
+
+Pipeline completo: **transcript → query understanding → retrieval filtrado →
+augmentation → generation → validación de citas**. Los endpoints S09 viven bajo
+`/v1/...` (sin prefijo `/api/v1`) y requieren header `X-API-Key`.
+
+| Endpoint | Auth key | Límite | Rol |
+|----------|----------|--------|-----|
+| `POST /v1/retrieval/search` | `RETRIEVAL_API_KEY` | 120/min | k-NN con umbral + filtros estructurales |
+| `POST /v1/estimate/from-transcript` | `ESTIMATE_API_KEY` | 10/min | Pipeline completo + idempotencia |
+| `POST /v1/estimate/stages/*` | `ESTIMATE_API_KEY` | 30–60/min | Wizard por etapas (stateless) |
+
+El endpoint S08 `POST /search` (sin auth) se mantiene para compatibilidad con el
+Chunking Lab y demos.
+
+Variables clave en `.env`:
+
+```env
+LLM_TIMEOUT=600
+RETRIEVAL_API_KEY=demo-retrieval-key
+ESTIMATE_API_KEY=demo-estimate-key
+REFORMULATION_MODEL=gpt-5-mini
+GENERATION_MODEL=gpt-5
+GENERATION_REASONING_EFFORT=high
+GENERATION_MAX_TOKENS=64000
+RETRIEVAL_TOP_K=10
+RETRIEVAL_DISTANCE_THRESHOLD=0.6
+MAX_CONTEXT_TOKENS=16384
+IDEMPOTENCY_TTL=86400
+```
+
+### Retrieval filtrado
+
+```bash
+curl -s -X POST http://localhost:8000/v1/retrieval/search \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $RETRIEVAL_API_KEY" \
+  -d '{"query_text":"OAuth JWT authentication fintech","top_k":10,"distance_threshold":0.6,"sectors":["finance"]}' | jq
+```
+
+### Estimación desde transcript (one-shot)
+
+```bash
+curl -s -X POST http://localhost:8000/v1/estimate/from-transcript \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $ESTIMATE_API_KEY" \
+  -d '{"transcript":"'$(python -c 'print("x"*200)')'","idempotency_key":"demo-run-1"}' | jq
+```
+
+Repetir con la misma `idempotency_key` devuelve la respuesta cacheada sin
+re-ejecutar el pipeline LLM.
+
+### Wizard por etapas
+
+```bash
+# 1. Reformulate
+curl -s -X POST http://localhost:8000/v1/estimate/stages/reformulate \
+  -H "X-API-Key: $ESTIMATE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"transcript":"'$(python -c 'print("x"*200)')'"}' | jq
+
+# 2. Retrieve (usa search_text del paso anterior)
+curl -s -X POST http://localhost:8000/v1/estimate/stages/retrieve \
+  -H "X-API-Key: $ESTIMATE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"query_text":"ecommerce storefront card checkout"}' | jq
+```
+
+Todas las respuestas incluyen header `X-Request-ID` para correlación en logs.
+
 ## Ejecutar la app de Streamlit
 
 ```bash
@@ -517,6 +618,7 @@ La app multipage incluye:
 | **Estimación** | `POST /api/v1/estimate` + histórico local |
 | **Conversación** | Sesiones, adjuntos, ACB + histórico de `chat_sessions` |
 | **RAG Lab** | `POST /embeddings/compare` sobre `data/budgets_sample.json` |
+| **RAG Estimación** | Wizard 6 etapas sobre `/v1/estimate/stages/*` (S09) |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` (overrides runtime en Redis) |
 
 Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`).
@@ -525,6 +627,7 @@ En Docker Compose el volumen `./streamlit_ui` conserva el histórico al recrear 
 Variables de entorno del frontend:
 
 - `ESTIMATION_API_BASE_URL` — default `http://localhost:8000/api/v1`
+- `ESTIMATE_API_KEY` / `RETRIEVAL_API_KEY` — claves para endpoints S09 (también en secrets)
 - `STREAMLIT_DB_PATH` — default `streamlit_ui/data/frontend.db`
 
 También puedes sobrescribir `ESTIMATION_API_BASE_URL` vía `.streamlit/secrets.toml`.
