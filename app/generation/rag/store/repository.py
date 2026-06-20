@@ -8,7 +8,7 @@ everything back and leaves no orphan ``documents`` row.
 
 from __future__ import annotations
 
-from sqlalchemy import Row, select
+from sqlalchemy import Integer, Row, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.generation.rag.schemas import EmbeddedChunk
@@ -86,3 +86,48 @@ class ChunkStore:
             .limit(k)
         )
         return list((await session.execute(stmt)).all())
+
+    async def search_filtered(
+        self,
+        session: AsyncSession,
+        *,
+        query_vector: list[float],
+        top_k: int = 10,
+        distance_threshold: float = 0.6,
+        sectors: list[str] | None = None,
+        project_year_min: int | None = None,
+        project_year_max: int | None = None,
+        chunk_types: list[str] | None = None,
+    ) -> tuple[list[Row], int]:
+        """Metadata-filtered k-NN with cosine distance threshold (Session 9)."""
+        sector_col = ChunkRow.metadata_["client_sector"].astext
+        year_col = cast(ChunkRow.metadata_["year"].astext, Integer)
+        structural = []
+        if sectors:
+            structural.append(sector_col.in_(sectors))
+        if project_year_min is not None:
+            structural.append(year_col >= project_year_min)
+        if project_year_max is not None:
+            structural.append(year_col <= project_year_max)
+        if chunk_types:
+            structural.append(ChunkRow.chunk_type.in_(chunk_types))
+        distance = ChunkRow.embedding.cosine_distance(query_vector)
+        count_stmt = select(func.count()).select_from(ChunkRow)
+        if structural:
+            count_stmt = count_stmt.where(*structural)
+        candidates = int((await session.execute(count_stmt)).scalar_one())
+        stmt = select(
+            ChunkRow.id,
+            ChunkRow.document_id,
+            ChunkRow.chunk_type,
+            ChunkRow.content,
+            ChunkRow.metadata_,
+            distance.label("distance"),
+        )
+        if structural:
+            stmt = stmt.where(*structural)
+        stmt = (
+            stmt.where(distance <= distance_threshold).order_by(distance).limit(top_k)
+        )
+        rows = list((await session.execute(stmt)).all())
+        return rows, candidates

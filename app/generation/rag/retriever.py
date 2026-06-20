@@ -15,7 +15,12 @@ import structlog
 from sqlalchemy.ext.asyncio import async_sessionmaker
 
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
-from app.generation.rag.schemas import SearchHit, SearchResponse
+from app.generation.rag.schemas import (
+    RetrievedChunk,
+    RetrievalResult,
+    SearchHit,
+    SearchResponse,
+)
 from app.generation.rag.store.repository import ChunkStore
 
 log = structlog.get_logger()
@@ -67,3 +72,68 @@ class SemanticRetriever:
             search_time_ms=elapsed_ms,
         )
         return response
+
+
+async def search_chunks(
+    query_embedding: list[float],
+    *,
+    top_k: int = 10,
+    distance_threshold: float = 0.6,
+    sectors: list[str] | None = None,
+    project_year_min: int | None = None,
+    project_year_max: int | None = None,
+    chunk_types: list[str] | None = None,
+) -> RetrievalResult:
+    """Metadata-filtered k-NN retrieval with a relevance threshold (Session 9)."""
+    from app.dependencies import get_async_session_factory, get_chunk_store
+    from app.generation.rag.errors import RetrievalError
+
+    session_factory = get_async_session_factory()
+    store = get_chunk_store()
+
+    started = time.perf_counter()
+    try:
+        async with session_factory() as session:
+            rows, candidates_evaluated = await store.search_filtered(
+                session,
+                query_vector=query_embedding,
+                top_k=top_k,
+                distance_threshold=distance_threshold,
+                sectors=sectors,
+                project_year_min=project_year_min,
+                project_year_max=project_year_max,
+                chunk_types=chunk_types,
+            )
+    except Exception as exc:  # noqa: BLE001
+        log.error(
+            "rag_filtered_search_failed",
+            error_type=type(exc).__name__,
+            error=str(exc)[:200],
+        )
+        raise RetrievalError("Vector store query failed.") from exc
+
+    chunks = [
+        RetrievedChunk(
+            id=row.id,
+            content=row.content,
+            sector=str(row.metadata_.get("client_sector", "unknown")),
+            project_year=int(row.metadata_.get("year", 0)),
+            chunk_type=row.chunk_type,
+            distance=float(row.distance),
+        )
+        for row in rows
+    ]
+    elapsed_ms = int((time.perf_counter() - started) * 1000)
+    log.info(
+        "rag_filtered_search_done",
+        results=len(chunks),
+        candidates_evaluated=candidates_evaluated,
+        top_k=top_k,
+        distance_threshold=distance_threshold,
+        search_time_ms=elapsed_ms,
+    )
+    return RetrievalResult(
+        chunks=chunks,
+        low_confidence=not chunks,
+        candidates_evaluated=candidates_evaluated,
+    )

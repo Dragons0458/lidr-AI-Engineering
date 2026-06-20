@@ -253,3 +253,17 @@ def get_filesystem_loader() -> FileSystemLoader:
 @lru_cache
 def get_parser_registry() -> ParserRegistry:
     return default_registry()
+
+
+@lru_cache
+def get_idempotency_store():
+    from app.generation.rag.idempotency import IdempotencyStore
+
+    return IdempotencyStore.from_settings(get_settings())
+
+
+@lru_cache
+def get_token_encoder():
+    import tiktoken
+
+    return tiktoken.get_encoding("cl100k_base")
