@@ -1,0 +1,38 @@
+{
+  "description": "Session 10 golden set for retrieval evaluation. Five queries tuned to surface differences between vector-only (A), hybrid (B), rerank (C) and hybrid+rerank (D): Q1 is a short keyword where FTS should rescue a budget the narrow vector recall misses; Q2 is another keyword where wide recall plus cross-encoder should reorder; Q3/Q4 are cases where reranking regresses despite good vector rankings; Q5 is a long natural-language baseline where all configs tie. relevant_budget_ids assigned via AI-assisted annotation against data/budgets_sample.json (chunk_type=budget_component). A retrieved chunk counts as relevant iff its parent budget_id is in relevant_budget_ids.",
+  "corpus": "data/budgets_sample.json",
+  "chunk_types": ["budget_component"],
+  "k": 5,
+  "queries": [
+    {
+      "id": "Q1",
+      "query": "Stripe",
+      "relevant_budget_ids": ["S07-ECO-001", "S07-ECO-002"],
+      "note": "Hybrid win: FTS matches both e-commerce budgets; narrow vector recall (top_k=5) often surfaces only one Stripe chunk."
+    },
+    {
+      "id": "Q2",
+      "query": "SCADA",
+      "relevant_budget_ids": ["S07-IND-004"],
+      "note": "Rerank win: vector lumps IND-001/IND-003 industrial telemetry with IND-004; cross-encoder promotes the wind-farm SCADA budget."
+    },
+    {
+      "id": "Q3",
+      "query": "telemedicine",
+      "relevant_budget_ids": ["S07-HLT-001", "S07-HLT-002"],
+      "note": "Rerank regression: bi-encoder already ranks both healthcare budgets at the top; reranking promotes HLT-004 pharmacy noise."
+    },
+    {
+      "id": "Q4",
+      "query": "Stripe marketplace",
+      "relevant_budget_ids": ["S07-ECO-001"],
+      "note": "Rerank regression: vector keeps ECO-001 checkout chunks high; reranker demotes them below adjacent e-commerce budgets."
+    },
+    {
+      "id": "Q5",
+      "query": "Telemedicine platform for patient appointment scheduling, secure messaging and remote monitoring of connected medical devices.",
+      "relevant_budget_ids": ["S07-HLT-001", "S07-HLT-002"],
+      "note": "Baseline: long NL query where all four configs reach the same precision — useful as a sanity check, not a differentiator."
+    }
+  ]
+}
