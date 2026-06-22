@@ -6,7 +6,7 @@ from datetime import datetime
 
 from pgvector.sqlalchemy import Vector
 from sqlalchemy import BigInteger, ForeignKey, Index, String, Text, func, text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
@@ -39,6 +39,7 @@ class ChunkRow(Base):
         Index("ix_chunks_document_id", "document_id"),
         Index("ix_chunks_chunk_type", "chunk_type"),
         Index("ix_chunks_metadata_gin", "metadata", postgresql_using="gin"),
+        Index("ix_chunks_content_tsv", "content_tsv", postgresql_using="gin"),
     )
 
     id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
@@ -49,6 +50,7 @@ class ChunkRow(Base):
     )
     chunk_type: Mapped[str] = mapped_column(String(50), nullable=False)
     content: Mapped[str] = mapped_column(Text, nullable=False)
+    content_tsv: Mapped[str | None] = mapped_column(TSVECTOR, nullable=True)
     embedding: Mapped[list[float] | None] = mapped_column(
         Vector(EMBEDDING_DIM), nullable=True
     )

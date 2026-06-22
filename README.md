@@ -119,6 +119,9 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   generate`), endpoints autenticados (`POST /v1/retrieval/search`, `POST /v1/estimate/from-transcript`,
   `POST /v1/estimate/stages/*`), idempotencia Redis, rate limiting por API key y wizard
   Streamlit de 6 etapas.
+- **Sesión 10**: búsqueda híbrida (vectorial ∥ léxica FTS + fusión RRF), reranking
+  cross-encoder recall-then-rerank (top-50 → top-5), golden set de evaluación y script
+  `scripts/eval_retrieval_s10.py` (configs A/B/C/D).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -139,6 +142,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - OpenAI SDK + tiktoken + langchain-text-splitters + nltk + anthropic (embeddings y chunking)
 - SQLAlchemy 2.0 + Alembic + psycopg + asyncpg + pgvector (Postgres)
 - slowapi (rate limiting Session 9)
+- sentence-transformers + PyTorch (cross-encoder reranking Session 10)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -186,7 +190,12 @@ app/
       store/models.py            # DocumentRow + ChunkRow (pgvector, S08)
       store/repository.py        # ChunkStore — CRUD + cosine search (S08)
       ingest_service.py          # RagIngestService — transacción única (S08)
-      retriever.py               # SemanticRetriever + search_chunks (S08/S09)
+      retriever.py               # SemanticRetriever + search_chunks (S08/S09/S10)
+      retrieval/                 # Hybrid search + reranking (S10)
+        fusion.py                # Reciprocal Rank Fusion (RRF)
+        pipeline.py              # retrieve() — vector/hybrid × rerank on/off
+        reranker.py              # CrossEncoderReranker (ported wrapper)
+        verify_reranker.py       # Pre-flight gate for the reranker model
       estimator.py               # estimate_from_transcript orchestrator (S09)
       query_reformulator.py      # transcript → EstimationQuery (S09)
       context_assembler.py       # <source> XML block + token budget (S09)
@@ -194,6 +203,8 @@ app/
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
 data/
+evals/
+  golden_retrieval.json          # Golden set S10 (5 queries, ids S07-*)
   catalog/catalog.yaml
   budgets_sample.json            # 15 presupuestos sintéticos (S07)
   test_queries.json              # 6 consultas fijas para /embeddings/compare
@@ -208,6 +219,7 @@ scripts/
   compare_indexes_s08.py         # vector vs halfvec HNSW
   report_index_sizes_s08.py      # Tamaños y uso de índices
   insert_synthetic_chunks_s08.py # Corpus sintético para demos de mantenimiento
+  eval_retrieval_s10.py          # Medición precision@5 × 4 configs (S10)
   sql_s08/                       # 6 scripts SQL (HNSW, halfvec, mantenimiento)
   preflight_s06.py
   demo_cleaning_s06.py
@@ -291,6 +303,13 @@ RETRIEVAL_TOP_K=10
 RETRIEVAL_DISTANCE_THRESHOLD=0.6
 MAX_CONTEXT_TOKENS=16384
 IDEMPOTENCY_TTL=86400
+# Session 10 — hybrid search + cross-encoder reranking
+RETRIEVAL_SEARCH_MODE=vector
+RERANKER_ENABLED=false
+RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+RETRIEVAL_RECALL_TOP_K=50
+RERANK_TOP_N=5
+RRF_K=60
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -563,6 +582,12 @@ RETRIEVAL_TOP_K=10
 RETRIEVAL_DISTANCE_THRESHOLD=0.6
 MAX_CONTEXT_TOKENS=16384
 IDEMPOTENCY_TTL=86400
+RETRIEVAL_SEARCH_MODE=vector
+RERANKER_ENABLED=false
+RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+RETRIEVAL_RECALL_TOP_K=50
+RERANK_TOP_N=5
+RRF_K=60
 ```
 
 ### Retrieval filtrado
@@ -603,6 +628,65 @@ curl -s -X POST http://localhost:8000/v1/estimate/stages/retrieve \
 ```
 
 Todas las respuestas incluyen header `X-Request-ID` para correlación en logs.
+
+## Sesión 10 — búsqueda híbrida + reranking cross-encoder
+
+Dos palancas conmutables por `.env` componen las **4 configuraciones** del ejercicio:
+
+| Config | `RETRIEVAL_SEARCH_MODE` | `RERANKER_ENABLED` |
+|--------|-------------------------|-------------------|
+| **A** Vectorial, sin rerank | `vector` | `false` |
+| **B** Híbrida, sin rerank | `hybrid` | `false` |
+| **C** Vectorial, con rerank | `vector` | `true` |
+| **D** Híbrida, con rerank | `hybrid` | `true` |
+
+Pipeline recall-then-rerank: recuperación amplia (top-50) → fusión RRF si híbrida →
+cross-encoder opcional → top-5 al LLM. La rama léxica usa columna generada
+`content_tsv` (migración `0003`, config **`english`** — el corpus está en inglés
+técnico, no en español; ver `CONCLUSIONS.md`).
+
+Variables en `.env`:
+
+```env
+RETRIEVAL_SEARCH_MODE=vector
+RERANKER_ENABLED=false
+RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
+RETRIEVAL_RECALL_TOP_K=50
+RERANK_TOP_N=5
+RRF_K=60
+```
+
+### Verificar el reranker (gate pre-vuelo)
+
+```bash
+docker compose exec api python -m app.generation.rag.retrieval.verify_reranker
+```
+
+### Medición del golden set (4 configs)
+
+Corpus ingerido (`30` chunks) + `OPENAI_API_KEY`. Desde el host:
+
+```bash
+DATABASE_URL=postgresql+psycopg://estimator:estimator@localhost:5433/estimator \
+  uv run python scripts/eval_retrieval_s10.py
+```
+
+O dentro del contenedor (con `evals/` montado):
+
+```bash
+docker compose exec api python scripts/eval_retrieval_s10.py
+```
+
+Salida: tabla **precision@5** + latencia mediana por config. Resultados y decisión
+argumentada en [`CONCLUSIONS.md`](CONCLUSIONS.md).
+
+### FTS manual (smoke test)
+
+```bash
+docker compose exec postgres psql -U estimator -d estimator -c \
+  "SELECT id, ts_rank(content_tsv, q) r FROM chunks, websearch_to_tsquery('english','OAuth JWT') q \
+   WHERE content_tsv @@ q ORDER BY r DESC LIMIT 5;"
+```
 
 ## Ejecutar la app de Streamlit
 

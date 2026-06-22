@@ -84,6 +84,7 @@ async def retrieve(request: Request, payload: RetrievalRequest) -> RetrievalResu
             )
             return await search_chunks(
                 query_embedding,
+                query_text=payload.query_text,
                 top_k=payload.top_k,
                 distance_threshold=payload.distance_threshold,
                 sectors=payload.sectors,

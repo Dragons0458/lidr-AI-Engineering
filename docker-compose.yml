@@ -54,6 +54,7 @@ services:
       - ./alembic:/app/alembic
       - ./alembic.ini:/app/alembic.ini
       - ./scripts:/app/scripts
+      - ./evals:/app/evals
       - ./tests:/app/tests
     command: >
       sh -c "alembic upgrade head &&

@@ -124,7 +124,10 @@ async def estimate_from_transcript(
     with log_stage("retrieval", request_id, sectors=sectors):
         retrieval = await search_chunks(
             query_embedding,
-            top_k=settings.RETRIEVAL_TOP_K,
+            query_text=search_text,
+            top_k=settings.RERANK_TOP_N
+            if settings.RERANKER_ENABLED
+            else settings.RETRIEVAL_TOP_K,
             distance_threshold=settings.RETRIEVAL_DISTANCE_THRESHOLD,
             sectors=sectors,
         )
