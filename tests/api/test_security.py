@@ -25,8 +25,27 @@ def stub(monkeypatch):
         )(),
     )
 
-    async def fake_search(query_embedding, **kwargs):
+    async def fake_retrieve(**kwargs):
         return RetrievalResult(chunks=[], low_confidence=True, candidates_evaluated=0)
+
+    runtime = type(
+        "R",
+        (),
+        {
+            "effective_search_mode": staticmethod(lambda: "vector"),
+            "effective_rerank": staticmethod(lambda: False),
+        },
+    )()
+
+    monkeypatch.setattr(
+        retrieval_router,
+        "get_embedder",
+        lambda: type("E", (), {"embed_one": staticmethod(lambda t: [0.0] * 1536)})(),
+    )
+    monkeypatch.setattr(retrieval_router, "retrieve", fake_retrieve)
+    monkeypatch.setattr(
+        retrieval_router, "get_runtime_retrieval_config", lambda: runtime
+    )
 
     async def fake_estimate(transcript, idempotency_key=None):
         return Estimate(
@@ -35,12 +54,6 @@ def stub(monkeypatch):
             insufficient_context_explanation="stub",
         )
 
-    monkeypatch.setattr(
-        retrieval_router,
-        "get_embedder",
-        lambda: type("E", (), {"embed_one": staticmethod(lambda t: [0.0] * 1536)})(),
-    )
-    monkeypatch.setattr(retrieval_router, "search_chunks", fake_search)
     monkeypatch.setattr(estimate_router, "estimate_from_transcript", fake_estimate)
     yield
 

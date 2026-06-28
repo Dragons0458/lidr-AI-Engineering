@@ -25,6 +25,9 @@ _SETTINGS = SimpleNamespace(
     GENERATION_MAX_TOKENS=64_000,
     RETRIEVAL_TOP_K=10,
     RETRIEVAL_DISTANCE_THRESHOLD=0.6,
+    RETRIEVAL_RECALL_TOP_K=50,
+    RERANK_TOP_N=5,
+    RRF_K=60,
     MAX_CONTEXT_TOKENS=100_000,
 )
 
@@ -86,11 +89,11 @@ def wire(monkeypatch):
             calls["reformulate"] += 1
             return EstimationQuery(function="ecommerce storefront", sector="ecommerce")
 
-        async def fake_search(query_embedding, **kwargs):
+        async def fake_search(**kwargs):
             calls["search"] += 1
             return retrieval
 
-        async def fake_generate(context_block, structured_query):
+        async def fake_generate(context_block, structured_query, *, include_hours=True):
             calls["generate"] += 1
             return estimate
 
@@ -98,15 +101,21 @@ def wire(monkeypatch):
             calls["embed"] += 1
             return [0.0] * 1536
 
+        runtime = SimpleNamespace(
+            effective_search_mode=lambda: "vector",
+            effective_rerank=lambda: False,
+        )
+
         monkeypatch.setattr(orch, "get_settings", lambda: _SETTINGS)
         monkeypatch.setattr(orch, "reformulate_query", fake_reformulate)
-        monkeypatch.setattr(orch, "search_chunks", fake_search)
+        monkeypatch.setattr(orch, "retrieve", fake_search)
         monkeypatch.setattr(orch, "generate_estimate", fake_generate)
         monkeypatch.setattr(
             deps, "get_embedder", lambda: SimpleNamespace(embed_one=fake_embed)
         )
         monkeypatch.setattr(deps, "get_token_encoder", lambda: CharEncoder())
         monkeypatch.setattr(deps, "get_idempotency_store", lambda: store)
+        monkeypatch.setattr(deps, "get_runtime_retrieval_config", lambda: runtime)
         return calls, store
 
     return _wire

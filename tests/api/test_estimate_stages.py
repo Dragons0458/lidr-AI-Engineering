@@ -169,7 +169,7 @@ def test_generate_flags_fabricated_citations(client, monkeypatch):
         ],
     )
 
-    async def fake_generate(context_block, structured_query):
+    async def fake_generate(context_block, structured_query, *, include_hours=True):
         return estimate
 
     monkeypatch.setattr(stages, "generate_estimate", fake_generate)
@@ -190,7 +190,7 @@ def test_generate_flags_incoherent_insufficient(client, monkeypatch):
         insufficient_context_explanation="should not have numbers",
     )
 
-    async def fake_generate(context_block, structured_query):
+    async def fake_generate(context_block, structured_query, *, include_hours=True):
         return estimate
 
     monkeypatch.setattr(stages, "generate_estimate", fake_generate)
@@ -213,15 +213,27 @@ def test_existing_endpoints_still_work(client, monkeypatch):
             insufficient_context_explanation="stub",
         )
 
-    async def fake_search(query_embedding, **kwargs):
+    async def fake_retrieve(**kwargs):
         return RetrievalResult(chunks=[], low_confidence=True, candidates_evaluated=0)
+
+    runtime = type(
+        "R",
+        (),
+        {
+            "effective_search_mode": staticmethod(lambda: "vector"),
+            "effective_rerank": staticmethod(lambda: False),
+        },
+    )()
 
     monkeypatch.setattr(
         retrieval_router,
         "get_embedder",
         lambda: type("E", (), {"embed_one": staticmethod(lambda t: [0.0] * 1536)})(),
     )
-    monkeypatch.setattr(retrieval_router, "search_chunks", fake_search)
+    monkeypatch.setattr(retrieval_router, "retrieve", fake_retrieve)
+    monkeypatch.setattr(
+        retrieval_router, "get_runtime_retrieval_config", lambda: runtime
+    )
     monkeypatch.setattr(estimate_router, "estimate_from_transcript", fake_estimate)
 
     r1 = client.post(
@@ -234,3 +246,46 @@ def test_existing_endpoints_still_work(client, monkeypatch):
     )
     assert r1.status_code == 200
     assert r2.status_code == 200
+
+
+def test_structure_returns_modules_without_citations(client, monkeypatch):
+    estimate = Estimate(
+        confidence="high",
+        reasoning="structure only",
+        modules=[
+            {
+                "name": "Auth",
+                "tasks": [{"name": "OAuth login", "description": "Google SSO"}],
+            }
+        ],
+    )
+
+    async def fake_structure(query):
+        return estimate
+
+    monkeypatch.setattr(stages, "generate_structure", fake_structure)
+    r = client.post(
+        "/v1/estimate/stages/structure",
+        json={"query": EstimationQuery(function="online store").model_dump()},
+        headers=_h(),
+    )
+    assert r.status_code == 200
+    body = r.json()
+    assert body["fabricated_source_ids"] == []
+    assert body["coherent"] is True
+    assert body["estimate"]["modules"][0]["name"] == "Auth"
+
+
+def test_generate_with_include_hours_false(client, monkeypatch):
+    captured: dict = {}
+
+    async def fake_generate(context_block, structured_query, *, include_hours=True):
+        captured["include_hours"] = include_hours
+        return Estimate(confidence="high", reasoning="r")
+
+    monkeypatch.setattr(stages, "generate_estimate", fake_generate)
+    payload = _generate_payload(Estimate(confidence="high", reasoning="r"))
+    payload["include_hours"] = False
+    r = client.post("/v1/estimate/stages/generate", json=payload, headers=_h())
+    assert r.status_code == 200
+    assert captured.get("include_hours") is False

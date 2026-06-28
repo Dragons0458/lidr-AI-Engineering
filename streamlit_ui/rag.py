@@ -100,6 +100,37 @@ MODEL_KNOB_LABELS: dict[str, dict[str, str]] = {
     },
 }
 
+RETRIEVAL_KNOB_LABELS: dict[str, dict[str, str]] = {
+    "RETRIEVAL_SEARCH_MODE": {
+        "label": "Search mode",
+        "description": "vector (dense only) or hybrid (dense + lexical FTS + RRF).",
+    },
+    "RERANKER_ENABLED": {
+        "label": "Cross-encoder rerank",
+        "description": "Recall-then-rerank with the cross-encoder model.",
+    },
+    "RETRIEVAL_ROUTING_ENABLED": {
+        "label": "Multi-index routing",
+        "description": "Route queries to budget / transcript / technical_doc collections.",
+    },
+    "QUERY_TRANSFORM_ENABLED": {
+        "label": "Query transform",
+        "description": "Expand or decompose queries before retrieval.",
+    },
+    "TEMPORAL_DECAY_ENABLED": {
+        "label": "Temporal decay",
+        "description": "Re-weight scores by document age (half-life in .env).",
+    },
+    "TASK_HOURS_TOP_K": {
+        "label": "Task-hours top-k",
+        "description": "Historical neighbours per task for hours consensus.",
+    },
+    "TASK_HOURS_DISTANCE_THRESHOLD": {
+        "label": "Task-hours distance threshold",
+        "description": "Red-flag floor: no match beyond this cosine distance.",
+    },
+}
+
 COST_BADGE: dict[str, str] = {
     "free": "",
     "cheap": "$",
@@ -131,6 +162,36 @@ def cost_hint(selected: list[str]) -> str:
 def build_settings_update_payload(selections: dict[str, str]) -> dict[str, str | None]:
     """Map UI selectbox values: empty string means reset to default (None)."""
     return {key: (value if value else None) for key, value in selections.items()}
+
+
+def build_retrieval_update_payload(
+    *,
+    search_mode: str | None,
+    rerank: bool | None,
+    routing_enabled: bool | None,
+    query_transform_enabled: bool | None,
+    temporal_decay_enabled: bool | None,
+    task_hours_top_k: int | None,
+    task_hours_distance_threshold: float | None,
+    touched: set[str],
+) -> dict[str, object | None]:
+    """Build PUT /config/retrieval body from UI fields (only touched keys)."""
+    payload: dict[str, object | None] = {}
+    if "search_mode" in touched:
+        payload["search_mode"] = search_mode or None
+    if "rerank" in touched:
+        payload["rerank"] = rerank
+    if "routing_enabled" in touched:
+        payload["routing_enabled"] = routing_enabled
+    if "query_transform_enabled" in touched:
+        payload["query_transform_enabled"] = query_transform_enabled
+    if "temporal_decay_enabled" in touched:
+        payload["temporal_decay_enabled"] = temporal_decay_enabled
+    if "task_hours_top_k" in touched:
+        payload["task_hours_top_k"] = task_hours_top_k
+    if "task_hours_distance_threshold" in touched:
+        payload["task_hours_distance_threshold"] = task_hours_distance_threshold
+    return payload
 
 
 def hierarchical_level_badge(chunk_id: str) -> str | None:

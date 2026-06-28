@@ -4,6 +4,11 @@ The store never opens or commits sessions: the caller (ingest service,
 retriever) owns the ``AsyncSession`` so a whole ingest — duplicate check,
 document row, chunk rows — fits in ONE transaction. A failure anywhere rolls
 everything back and leaves no orphan ``documents`` row.
+
+Session 10 makes every search/persist method **collection-aware**: a ``model``
+argument selects which chunk table (``budget_chunks`` / ``transcript_chunks`` /
+``technical_doc_chunks``) the query runs against. It defaults to the budgets
+table so all Session 8/9 callers are unaffected.
 """
 
 from __future__ import annotations
@@ -13,7 +18,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.generation.rag.schemas import EmbeddedChunk
-from app.generation.rag.store.models import ChunkRow, DocumentRow
+from app.generation.rag.store.models import BudgetChunkRow, DocumentRow, FTS_REGCONFIG
 
 # The structural chunker emits one chunk per budget component; the vocabulary
 # is queryable thanks to the index on ``chunk_type`` (live-session filters).
@@ -21,10 +26,11 @@ BUDGET_COMPONENT = "budget_component"
 
 
 class ChunkStore:
-    """CRUD + similarity search over ``documents``/``chunks``."""
+    """CRUD + similarity search over ``documents`` and the chunk tables."""
 
+    @staticmethod
     def _structural_filters(
-        self,
+        model: type,
         *,
         sectors: list[str] | None = None,
         project_year_min: int | None = None,
@@ -32,8 +38,8 @@ class ChunkStore:
         chunk_types: list[str] | None = None,
     ) -> list[ColumnElement]:
         """Shared metadata filters for vector and lexical branches."""
-        sector_col = ChunkRow.metadata_["client_sector"].astext
-        year_col = cast(ChunkRow.metadata_["year"].astext, Integer)
+        sector_col = model.metadata_["client_sector"].astext
+        year_col = cast(model.metadata_["year"].astext, Integer)
         structural: list[ColumnElement] = []
         if sectors:
             structural.append(sector_col.in_(sectors))
@@ -42,7 +48,7 @@ class ChunkStore:
         if project_year_max is not None:
             structural.append(year_col <= project_year_max)
         if chunk_types:
-            structural.append(ChunkRow.chunk_type.in_(chunk_types))
+            structural.append(model.chunk_type.in_(chunk_types))
         return structural
 
     async def find_document_id(
@@ -61,6 +67,8 @@ class ChunkStore:
         document_type: str,
         doc_metadata: dict,
         embedded_chunks: list[EmbeddedChunk],
+        chunk_type: str = BUDGET_COMPONENT,
+        model: type = BudgetChunkRow,
     ) -> int:
         """Insert the document row plus all its chunk rows. No commit here —
         the caller's transaction decides when (and whether) anything lands."""
@@ -70,12 +78,12 @@ class ChunkStore:
             metadata_=doc_metadata,
         )
         session.add(document)
-        await session.flush()  # assigns document.id without committing
+        await session.flush()
 
         session.add_all(
-            ChunkRow(
+            model(
                 document_id=document.id,
-                chunk_type=BUDGET_COMPONENT,
+                chunk_type=chunk_type,
                 content=chunk.text,
                 embedding=chunk.embedding,
                 metadata_=chunk.metadata,
@@ -85,24 +93,22 @@ class ChunkStore:
         return document.id
 
     async def search(
-        self, session: AsyncSession, *, query_vector: list[float], k: int
+        self,
+        session: AsyncSession,
+        *,
+        query_vector: list[float],
+        k: int,
+        model: type = BudgetChunkRow,
     ) -> list[Row]:
-        """k nearest chunks by cosine distance (``<=>``), sequential scan.
-
-        Cosine over L2/inner product: OpenAI embeddings are normalized so the
-        ranking would be equivalent, but cosine keeps us aligned with the RAG
-        literature AND with the ``vector_cosine_ops`` operator class of the
-        HNSW index the live session adds — operator/index mismatch makes
-        Postgres silently ignore the index.
-        """
-        distance = ChunkRow.embedding.cosine_distance(query_vector)
+        """k nearest chunks by cosine distance (``<=>``), sequential scan."""
+        distance = model.embedding.cosine_distance(query_vector)
         stmt = (
             select(
-                ChunkRow.id,
-                ChunkRow.document_id,
-                ChunkRow.chunk_type,
-                ChunkRow.content,
-                ChunkRow.metadata_,
+                model.id,
+                model.document_id,
+                model.chunk_type,
+                model.content,
+                model.metadata_,
                 distance.label("distance"),
             )
             .order_by(distance)
@@ -121,25 +127,32 @@ class ChunkStore:
         project_year_min: int | None = None,
         project_year_max: int | None = None,
         chunk_types: list[str] | None = None,
+        model: type = BudgetChunkRow,
+        extra_filters: list | None = None,
     ) -> tuple[list[Row], int]:
         """Metadata-filtered k-NN with cosine distance threshold (Session 9)."""
         structural = self._structural_filters(
+            model,
             sectors=sectors,
             project_year_min=project_year_min,
             project_year_max=project_year_max,
             chunk_types=chunk_types,
         )
-        distance = ChunkRow.embedding.cosine_distance(query_vector)
-        count_stmt = select(func.count()).select_from(ChunkRow)
+        structural.extend(extra_filters or [])
+
+        distance = model.embedding.cosine_distance(query_vector)
+
+        count_stmt = select(func.count()).select_from(model)
         if structural:
             count_stmt = count_stmt.where(*structural)
         candidates = int((await session.execute(count_stmt)).scalar_one())
+
         stmt = select(
-            ChunkRow.id,
-            ChunkRow.document_id,
-            ChunkRow.chunk_type,
-            ChunkRow.content,
-            ChunkRow.metadata_,
+            model.id,
+            model.document_id,
+            model.chunk_type,
+            model.content,
+            model.metadata_,
             distance.label("distance"),
         )
         if structural:
@@ -160,41 +173,35 @@ class ChunkStore:
         project_year_min: int | None = None,
         project_year_max: int | None = None,
         chunk_types: list[str] | None = None,
+        model: type = BudgetChunkRow,
+        extra_filters: list | None = None,
     ) -> list[Row]:
         """Keyword (full-text) ranking over the ``content_tsv`` column (Session 10).
 
-        The lexical branch of hybrid search: ``websearch_to_tsquery`` tolerates
-        natural-language input and search-style syntax better than ``plainto_tsquery``,
-        which AND-every lexeme and often returns zero rows on long queries. ``@@``
-        keeps only chunks that match; ``ts_rank`` scores them (higher is better,
-        opposite to vector distance). The ``english`` config MUST match the generated
-        column's config (migration 0003) or the GIN index is bypassed and matching
-        silently changes. Structural filters mirror ``search_filtered`` so the two
-        branches see the same candidate space.
-
-        Returns rows ordered by rank DESC (most relevant first), capped at
-        ``top_k``. ``rank`` rides along for debugging; fusion only uses the ordering.
+        Uses ``websearch_to_tsquery`` + ``ts_rank`` (estimador-cag signature).
         """
-        tsquery = func.websearch_to_tsquery("english", query_text)
-        rank = func.ts_rank(ChunkRow.content_tsv, tsquery)
+        tsquery = func.websearch_to_tsquery(FTS_REGCONFIG, query_text)
+        rank = func.ts_rank(model.content_tsv, tsquery)
 
         structural_filters = self._structural_filters(
+            model,
             sectors=sectors,
             project_year_min=project_year_min,
             project_year_max=project_year_max,
             chunk_types=chunk_types,
         )
+        structural_filters.extend(extra_filters or [])
 
         stmt = (
             select(
-                ChunkRow.id,
-                ChunkRow.document_id,
-                ChunkRow.chunk_type,
-                ChunkRow.content,
-                ChunkRow.metadata_,
+                model.id,
+                model.document_id,
+                model.chunk_type,
+                model.content,
+                model.metadata_,
                 rank.label("rank"),
             )
-            .where(ChunkRow.content_tsv.op("@@")(tsquery))
+            .where(model.content_tsv.op("@@")(tsquery))
             .where(*structural_filters)
             .order_by(rank.desc())
             .limit(top_k)

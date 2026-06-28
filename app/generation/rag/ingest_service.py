@@ -21,7 +21,7 @@ from sqlalchemy.ext.asyncio import async_sessionmaker
 from app.generation.rag.chunking.structural import JSONStructuralChunker
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
 from app.generation.rag.schemas import Budget, IngestResponse
-from app.generation.rag.store.repository import ChunkStore
+from app.generation.rag.store.repository import BUDGET_COMPONENT, ChunkStore
 
 log = structlog.get_logger()
 
@@ -50,7 +50,12 @@ class RagIngestService:
         self._store = store
 
     async def ingest(
-        self, *, source_path: str, document_type: str, budget: Budget
+        self,
+        *,
+        source_path: str,
+        document_type: str,
+        budget: Budget,
+        chunk_type: str = BUDGET_COMPONENT,
     ) -> IngestResponse:
         started = time.perf_counter()
 
@@ -72,6 +77,7 @@ class RagIngestService:
                     "year": budget.year,
                 },
                 embedded_chunks=embedded,
+                chunk_type=chunk_type,
             )
 
         elapsed_ms = int((time.perf_counter() - started) * 1000)

@@ -1,4 +1,4 @@
-"""RAG Estimation wizard — transcript → grounded estimate (Session 9)."""
+"""RAG Estimation wizard — Session 10 two-phase flow (structure → hours → review)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from typing import Any
 runpy.run_path(str(Path(__file__).resolve().parent.parent / "path_setup.py"))
 
 import httpx
+import pandas as pd
 import streamlit as st
 
 from streamlit_ui.common import (
@@ -24,15 +25,13 @@ api_root = get_api_root_url()
 estimate_key = get_estimate_api_key()
 headers = {"X-API-Key": estimate_key} if estimate_key else {}
 
-SECTORS = ["finance", "ecommerce", "healthcare", "industrial"]
-
 _DEFAULTS = {
     "rag_transcript": "",
     "rag_reformulation": None,
-    "rag_retrieval": None,
-    "rag_assemble": None,
-    "rag_generate": None,
-    "rag_verified_modules": None,
+    "rag_structure": None,
+    "rag_structure_rows": None,
+    "rag_hours": None,
+    "rag_final_rows": None,
 }
 for key, default in _DEFAULTS.items():
     if key not in st.session_state:
@@ -62,10 +61,43 @@ def _post(path: str, payload: dict[str, Any]) -> dict[str, Any] | None:
         return None
 
 
+def _structure_rows_from_estimate(estimate: dict) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for module in estimate.get("modules", []):
+        for task in module.get("tasks", []):
+            rows.append(
+                {
+                    "module": module.get("name", ""),
+                    "module_description": module.get("description") or "",
+                    "task": task.get("name", ""),
+                    "description": task.get("description") or "",
+                }
+            )
+    return rows
+
+
+def _modules_payload_from_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    modules: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("module", "")).strip()
+        if not name:
+            continue
+        bucket = modules.setdefault(name, {"name": name, "tasks": []})
+        task_name = str(row.get("task", "")).strip()
+        if task_name:
+            bucket["tasks"].append(
+                {
+                    "name": task_name,
+                    "description": str(row.get("description") or "").strip() or None,
+                }
+            )
+    return list(modules.values())
+
+
 st.title("RAG Estimación")
 st.caption(
-    "Wizard de 6 etapas: transcript → reformulación → retrieval → augmentation → "
-    "generación → verificación. Equivalente al flujo `Rag::EstimationRun` de estimator-web."
+    "Wizard S10: transcript → reformulación → estructura (revisión humana) → "
+    "horas por tarea → revisión final."
 )
 
 if not estimate_key:
@@ -101,10 +133,10 @@ if st.button("Empezar", type="primary"):
         st.session_state.rag_transcript = transcript
         _clear_downstream(
             "rag_reformulation",
-            "rag_retrieval",
-            "rag_assemble",
-            "rag_generate",
-            "rag_verified_modules",
+            "rag_structure",
+            "rag_structure_rows",
+            "rag_hours",
+            "rag_final_rows",
         )
         result = _post("/v1/estimate/stages/reformulate", {"transcript": transcript})
         if result:
@@ -122,152 +154,103 @@ if st.session_state.rag_reformulation:
     with col2:
         st.markdown("**search_text** (para embedding)")
         st.code(ref.get("search_text", ""))
-    if st.button("Re-ejecutar reformulación"):
-        _clear_downstream(
-            "rag_retrieval", "rag_assemble", "rag_generate", "rag_verified_modules"
-        )
-        result = _post(
-            "/v1/estimate/stages/reformulate",
-            {"transcript": st.session_state.rag_transcript},
-        )
-        if result:
-            st.session_state.rag_reformulation = result
-            st.rerun()
 
     st.divider()
-    st.subheader("3. Retrieval")
-    fcol1, fcol2, fcol3 = st.columns(3)
-    with fcol1:
-        top_k = st.number_input("top_k", min_value=1, max_value=30, value=10)
-        distance_threshold = st.number_input(
-            "distance_threshold", min_value=0.0, max_value=2.0, value=0.6, step=0.05
-        )
-    with fcol2:
-        sectors = st.multiselect("sectors", SECTORS)
-        chunk_types = st.text_input("chunk_types (coma-separados)", value="")
-    with fcol3:
-        year_min = st.number_input(
-            "project_year_min", min_value=2010, max_value=2100, value=2010
-        )
-        year_max = st.number_input(
-            "project_year_max", min_value=2010, max_value=2100, value=2100
-        )
-
-    if st.button("Ejecutar retrieval"):
-        _clear_downstream("rag_assemble", "rag_generate", "rag_verified_modules")
-        payload: dict[str, Any] = {
-            "query_text": ref.get("search_text", ""),
-            "top_k": top_k,
-            "distance_threshold": distance_threshold,
-        }
-        if sectors:
-            payload["sectors"] = sectors
-        if chunk_types.strip():
-            payload["chunk_types"] = [
-                c.strip() for c in chunk_types.split(",") if c.strip()
-            ]
-        if year_min:
-            payload["project_year_min"] = int(year_min)
-        if year_max:
-            payload["project_year_max"] = int(year_max)
-        result = _post("/v1/estimate/stages/retrieve", payload)
+    st.subheader("3. Estructura (sin horas)")
+    if st.button("Generar estructura"):
+        _clear_downstream("rag_structure_rows", "rag_hours", "rag_final_rows")
+        result = _post("/v1/estimate/stages/structure", {"query": query})
         if result:
-            st.session_state.rag_retrieval = result
-            st.rerun()
-
-if st.session_state.rag_retrieval:
-    ret = st.session_state.rag_retrieval
-    st.metric("candidates_evaluated", ret.get("candidates_evaluated", 0))
-    if ret.get("low_confidence"):
-        st.warning("low_confidence — ningún chunk superó el umbral.")
-    for chunk in ret.get("chunks", []):
-        with st.expander(
-            f"Chunk #{chunk['id']} · {chunk['sector']} · {chunk['project_year']} · d={chunk['distance']:.3f}"
-        ):
-            st.text(chunk.get("content", ""))
-
-    st.divider()
-    st.subheader("4. Augmentation")
-    max_tokens = st.number_input(
-        "max_context_tokens (opcional)", min_value=256, max_value=64000, value=16384
-    )
-    if st.button("Ensamblar contexto"):
-        _clear_downstream("rag_generate", "rag_verified_modules")
-        payload = {"chunks": ret.get("chunks", [])}
-        if max_tokens:
-            payload["max_context_tokens"] = int(max_tokens)
-        result = _post("/v1/estimate/stages/assemble", payload)
-        if result:
-            st.session_state.rag_assemble = result
-            st.rerun()
-
-if st.session_state.rag_assemble:
-    asm = st.session_state.rag_assemble
-    st.caption(
-        f"kept={len(asm.get('kept_chunks', []))} · dropped={asm.get('dropped_count', 0)} · tokens={asm.get('token_count', 0)}"
-    )
-    with st.expander("context_block"):
-        st.code(asm.get("context_block", ""))
-
-    st.divider()
-    st.subheader("5. Generación")
-    if st.button("Generar estimación"):
-        _clear_downstream("rag_verified_modules")
-        ref = st.session_state.rag_reformulation or {}
-        result = _post(
-            "/v1/estimate/stages/generate",
-            {
-                "context_block": asm.get("context_block", ""),
-                "query": ref.get("query", {}),
-                "kept_chunks": asm.get("kept_chunks", []),
-            },
-        )
-        if result:
-            st.session_state.rag_generate = result
-            st.rerun()
-
-if st.session_state.rag_generate:
-    gen = st.session_state.rag_generate
-    estimate = gen.get("estimate", {})
-    st.markdown(
-        f"**Confianza:** `{estimate.get('confidence')}` · **coherent:** `{gen.get('coherent')}`"
-    )
-    if gen.get("fabricated_source_ids"):
-        st.error(f"Citas fabricadas: {gen['fabricated_source_ids']}")
-    st.markdown(estimate.get("reasoning", ""))
-
-    rows: list[dict[str, Any]] = []
-    for module in estimate.get("modules", []):
-        for task in module.get("tasks", []):
-            rows.append(
-                {
-                    "module": module.get("name"),
-                    "task": task.get("name"),
-                    "description": task.get("description") or "",
-                    "engineer_days": task.get("engineer_days", 0),
-                    "sources": ",".join(str(s) for s in task.get("sources", [])),
-                }
+            st.session_state.rag_structure = result
+            st.session_state.rag_structure_rows = _structure_rows_from_estimate(
+                result.get("estimate", {})
             )
+            st.rerun()
 
-    if estimate.get("sources"):
-        st.markdown("**Fuentes**")
-        st.dataframe(estimate["sources"], use_container_width=True, hide_index=True)
-    if estimate.get("assumptions"):
-        st.markdown("**Supuestos**")
-        st.dataframe(estimate["assumptions"], use_container_width=True, hide_index=True)
-
-    st.divider()
-    st.subheader("6. Verificación")
-    if st.session_state.rag_verified_modules is None and rows:
-        st.session_state.rag_verified_modules = rows
-
-    edited = st.data_editor(
-        st.session_state.rag_verified_modules or rows,
+if st.session_state.rag_structure_rows is not None:
+    st.caption("Revisa y edita módulos/tareas antes de estimar horas.")
+    edited_structure = st.data_editor(
+        st.session_state.rag_structure_rows,
         num_rows="dynamic",
         use_container_width=True,
-        key="verification_editor",
+        key="structure_editor",
     )
-    if st.button("Guardar verificación"):
-        st.session_state.rag_verified_modules = edited
-        total = sum(int(r.get("engineer_days") or 0) for r in edited)
-        st.success(f"total_engineer_days recalculado: **{total}**")
+    st.session_state.rag_structure_rows = edited_structure
+
+    st.divider()
+    st.subheader("4. Horas por tarea")
+    if st.button("Estimar horas"):
+        _clear_downstream("rag_hours", "rag_final_rows")
+        modules = _modules_payload_from_rows(edited_structure)
+        if not modules:
+            st.error("Añade al menos un módulo con tareas.")
+        else:
+            result = _post("/v1/estimate/tasks/hours", {"modules": modules})
+            if result:
+                st.session_state.rag_hours = result
+                st.rerun()
+
+if st.session_state.rag_hours:
+    hours = st.session_state.rag_hours.get("tasks", [])
+    rows: list[dict[str, Any]] = []
+    for item in hours:
+        rows.append(
+            {
+                "module": item.get("module"),
+                "task": item.get("task"),
+                "estimated_hours": item.get("estimated_hours"),
+                "reliability": item.get("reliability"),
+                "dispersion": item.get("dispersion"),
+                "has_match": item.get("has_match", True),
+            }
+        )
+    df = pd.DataFrame(rows)
+    st.dataframe(
+        df.style.apply(
+            lambda row: [
+                "background-color: #ffcccc" if not row.get("has_match") else ""
+                for _ in row
+            ],
+            axis=1,
+        ),
+        use_container_width=True,
+        hide_index=True,
+    )
+    for item in hours:
+        if not item.get("has_match"):
+            st.warning(
+                f"Sin match histórico: **{item.get('module')} → {item.get('task')}**"
+            )
+        neighbors = item.get("neighbors") or []
+        if neighbors:
+            with st.expander(f"Vecinos · {item.get('task')}"):
+                st.json(neighbors)
+
+    if st.session_state.rag_final_rows is None:
+        st.session_state.rag_final_rows = [
+            {
+                "module": r["module"],
+                "task": r["task"],
+                "estimated_hours": r.get("estimated_hours") or 0,
+                "hourly_rate_eur": 80,
+            }
+            for r in rows
+        ]
+
+    st.divider()
+    st.subheader("5. Revisión final")
+    final_edited = st.data_editor(
+        st.session_state.rag_final_rows,
+        num_rows="dynamic",
+        use_container_width=True,
+        key="final_hours_editor",
+    )
+    st.session_state.rag_final_rows = final_edited
+    total_hours = sum(int(r.get("estimated_hours") or 0) for r in final_edited)
+    total_days = round(total_hours / 8, 1) if total_hours else 0
+    st.metric("Total horas", total_hours)
+    st.metric("Total engineer-days (8h)", total_days)
+    if st.button("Confirmar estimación"):
+        st.success(
+            f"Estimación confirmada: {total_days} engineer-days ({total_hours} h)."
+        )

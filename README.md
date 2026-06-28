@@ -121,7 +121,13 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   Streamlit de 6 etapas.
 - **Sesión 10**: búsqueda híbrida (vectorial ∥ léxica FTS + fusión RRF), reranking
   cross-encoder recall-then-rerank (top-50 → top-5), golden set de evaluación y script
-  `scripts/eval_retrieval_s10.py` (configs A/B/C/D).
+  `scripts/eval_retrieval_s10.py` (configs A/B/C/D). **Live S10**: multi-índice
+  (`budget_chunks` / `transcript_chunks` / `technical_doc_chunks`), routing en cascada,
+  expansión/descomposición de consultas, pipeline avanzado (`POST /v1/retrieval/advanced-search`),
+  decaimiento temporal, estimación en dos fases (estructura → horas por tarea con
+  `POST /v1/estimate/stages/structure` y `POST /v1/estimate/tasks/hours`), runtime config
+  de recuperación (`GET/PUT /api/v1/config/retrieval`) y scripts de corpus
+  (`build_multi_index_corpus.py`, `build_task_corpus.py`).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -164,11 +170,13 @@ app/
     security.py                  # API keys X-API-Key (S09)
     rate_limiting.py             # slowapi limiter (S09)
     deps.py                      # get_request_id (S09)
-    routers/                     # /v1/retrieval + /v1/estimate (S09)
+    routers/                     # /v1/retrieval + /v1/estimate (S09/S10)
       retrieval.py
+      retrieval_advanced.py      # POST /v1/retrieval/advanced-search (S10)
       estimate.py
       estimate_stages.py
-    config.py                    # GET/PUT /api/v1/config/models (S07)
+      estimate_tasks.py          # POST /v1/estimate/tasks/hours (S10)
+    config.py                    # GET/PUT /api/v1/config/models + /retrieval (S07/S10)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
     schemas/                     # Contratos Pydantic (estimation, ingestion, …)
@@ -187,16 +195,22 @@ app/
       chunking/strategies/       # 7 estrategias + structural
       analysis/                  # cosine_similarity + ChunkingComparator
       embedding/                 # OpenAIEmbedder
-      store/models.py            # DocumentRow + ChunkRow (pgvector, S08)
-      store/repository.py        # ChunkStore — CRUD + cosine search (S08)
+      store/models.py            # DocumentRow + Budget/Transcript/TechnicalDoc chunks (S08/S10)
+      store/repository.py        # ChunkStore — collection-aware CRUD + search (S08/S10)
       ingest_service.py          # RagIngestService — transacción única (S08)
       retriever.py               # SemanticRetriever + search_chunks (S08/S09/S10)
-      retrieval/                 # Hybrid search + reranking (S10)
-        fusion.py                # Reciprocal Rank Fusion (RRF)
-        pipeline.py              # retrieve() — vector/hybrid × rerank on/off
+      retrieval/                 # Hybrid + advanced retrieval (S10)
+        collections.py           # Multi-index registry + hard filters
+        query_transform.py       # Expand / decompose queries
+        router.py                # Cascade routing (explicit → rules → LLM)
+        temporal.py              # Temporal decay re-weighting
+        advanced_pipeline.py     # Full advanced retrieval orchestrator
+        fusion.py                # RRF + round-robin merge
+        pipeline.py              # retrieve() + hybrid_search_one()
         reranker.py              # CrossEncoderReranker (ported wrapper)
         verify_reranker.py       # Pre-flight gate for the reranker model
-      estimator.py               # estimate_from_transcript orchestrator (S09)
+      task_hours.py              # Per-task hours from historical_task corpus (S10)
+      estimator.py               # estimate_from_transcript + generate_structure (S09/S10)
       query_reformulator.py      # transcript → EstimationQuery (S09)
       context_assembler.py       # <source> XML block + token budget (S09)
       idempotency.py             # Redis/in-memory idempotency store (S09)
@@ -220,6 +234,8 @@ scripts/
   report_index_sizes_s08.py      # Tamaños y uso de índices
   insert_synthetic_chunks_s08.py # Corpus sintético para demos de mantenimiento
   eval_retrieval_s10.py          # Medición precision@5 × 4 configs (S10)
+  build_multi_index_corpus.py    # Ingest transcripts + technical docs (S10)
+  build_task_corpus.py           # Synthetic historical_task corpus (S10)
   sql_s08/                       # 6 scripts SQL (HNSW, halfvec, mantenimiento)
   preflight_s06.py
   demo_cleaning_s06.py
@@ -236,7 +252,7 @@ streamlit_ui/
     2_Conversacion.py
     3_RAG_Lab.py
     4_Ajustes_IA.py
-    5_RAG_Estimacion.py          # Wizard RAG 6 etapas (S09)
+    5_RAG_Estimacion.py          # Wizard S10: reformulación → estructura → horas → revisión
 tests/unit/{api,domain,foundation,generation}/…
 ```
 
@@ -303,13 +319,23 @@ RETRIEVAL_TOP_K=10
 RETRIEVAL_DISTANCE_THRESHOLD=0.6
 MAX_CONTEXT_TOKENS=16384
 IDEMPOTENCY_TTL=86400
-# Session 10 — hybrid search + cross-encoder reranking
+# Session 10 — hybrid search + cross-encoder reranking + advanced pipeline
 RETRIEVAL_SEARCH_MODE=vector
 RERANKER_ENABLED=false
 RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
 RETRIEVAL_RECALL_TOP_K=50
 RERANK_TOP_N=5
 RRF_K=60
+RETRIEVAL_ROUTING_ENABLED=true
+QUERY_TRANSFORM_ENABLED=true
+TEMPORAL_DECAY_ENABLED=false
+ROUTER_MODEL=gpt-4o-mini
+QUERY_TRANSFORM_MODEL=gpt-4o-mini
+TEMPORAL_DECAY_HALF_LIFE_DAYS=900
+QUERY_MAX_SUBQUERIES=4
+ROUTER_MAX_TARGETS=3
+TASK_HOURS_TOP_K=5
+TASK_HOURS_DISTANCE_THRESHOLD=0.45
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -341,10 +367,13 @@ Endpoints locales predeterminados:
 - `POST /embeddings/ingest` (chunking estructural + embeddings → Postgres/pgvector)
 - `POST /search` (búsqueda semántica por distancia coseno en SQL)
 - `POST /v1/retrieval/search` (búsqueda filtrada con `X-API-Key`, S09)
+- `POST /v1/retrieval/advanced-search` (multi-índice + routing + transform, S10)
 - `POST /v1/estimate/from-transcript` (estimación fundamentada, S09)
-- `POST /v1/estimate/stages/{reformulate,retrieve,assemble,generate}` (wizard, S09)
+- `POST /v1/estimate/stages/{reformulate,retrieve,assemble,structure,generate}` (wizard, S09/S10)
+- `POST /v1/estimate/tasks/hours` (horas por tarea desde corpus histórico, S10)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
+- `GET /api/v1/config/retrieval` / `PUT /api/v1/config/retrieval` (toggles recuperación S10)
 
 Con Postgres en marcha (`docker compose up` aplica `alembic upgrade head` al arrancar la API):
 
@@ -654,6 +683,73 @@ RERANKER_MODEL=cross-encoder/mmarco-mMiniLMv2-L12-H384-v1
 RETRIEVAL_RECALL_TOP_K=50
 RERANK_TOP_N=5
 RRF_K=60
+RETRIEVAL_ROUTING_ENABLED=true
+QUERY_TRANSFORM_ENABLED=true
+TEMPORAL_DECAY_ENABLED=false
+ROUTER_MODEL=gpt-4o-mini
+QUERY_TRANSFORM_MODEL=gpt-4o-mini
+TEMPORAL_DECAY_HALF_LIFE_DAYS=900
+QUERY_MAX_SUBQUERIES=4
+ROUTER_MAX_TARGETS=3
+TASK_HOURS_TOP_K=5
+TASK_HOURS_DISTANCE_THRESHOLD=0.45
+```
+
+### Multi-índice y pipeline avanzado (live S10)
+
+Migración `0004_session10_multi_index`: renombra `chunks` → `budget_chunks` y crea
+`transcript_chunks` + `technical_doc_chunks`. El router en cascada elige colección(es);
+`POST /v1/retrieval/advanced-search` compone transformación de consulta, routing,
+búsqueda híbrida por colección, fusión (RRF / round-robin), reranking, decaimiento
+temporal y top-k.
+
+```bash
+curl -s -X POST http://localhost:8000/v1/retrieval/advanced-search \
+  -H 'Content-Type: application/json' \
+  -H "X-API-Key: $RETRIEVAL_API_KEY" \
+  -d '{"query_text":"budget hours for OAuth and meeting transcript about checkout"}' | jq
+```
+
+Runtime config (sin reiniciar):
+
+```bash
+curl -s http://localhost:8000/api/v1/config/retrieval | jq
+curl -s -X PUT http://localhost:8000/api/v1/config/retrieval \
+  -H 'Content-Type: application/json' \
+  -d '{"search_mode":"hybrid","rerank":true}' | jq '.retrieval.RETRIEVAL_SEARCH_MODE'
+```
+
+### Estimación en dos fases (estructura → horas)
+
+```bash
+# 1. Estructura libre (sin retrieval ni horas)
+curl -s -X POST http://localhost:8000/v1/estimate/stages/structure \
+  -H "X-API-Key: $ESTIMATE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"query":{"function":"ecommerce storefront","technologies":["Rails","Stripe"],"sector":"ecommerce"}}' | jq
+
+# 2. Horas por tarea (requiere corpus historical_task ingerido)
+curl -s -X POST http://localhost:8000/v1/estimate/tasks/hours \
+  -H "X-API-Key: $ESTIMATE_API_KEY" \
+  -H 'Content-Type: application/json' \
+  -d '{"modules":[{"name":"Payments","tasks":[{"name":"Stripe checkout","description":"Card payments integration"}]}]}' | jq
+```
+
+### Corpus multi-índice (scripts)
+
+Con Postgres levantado y `OPENAI_API_KEY`:
+
+```bash
+docker compose exec api python scripts/build_multi_index_corpus.py
+docker compose exec api python scripts/build_task_corpus.py --ingest
+```
+
+Verificación SQL:
+
+```bash
+docker compose exec postgres psql -U estimator -d estimator -c \
+  "SELECT count(*) FROM transcript_chunks; SELECT count(*) FROM technical_doc_chunks; \
+   SELECT count(*) FROM budget_chunks WHERE chunk_type='historical_task';"
 ```
 
 ### Verificar el reranker (gate pre-vuelo)
@@ -684,7 +780,7 @@ argumentada en [`CONCLUSIONS.md`](CONCLUSIONS.md).
 
 ```bash
 docker compose exec postgres psql -U estimator -d estimator -c \
-  "SELECT id, ts_rank(content_tsv, q) r FROM chunks, websearch_to_tsquery('english','OAuth JWT') q \
+  "SELECT id, ts_rank(content_tsv, q) r FROM budget_chunks, websearch_to_tsquery('english','OAuth JWT') q \
    WHERE content_tsv @@ q ORDER BY r DESC LIMIT 5;"
 ```
 
@@ -702,8 +798,8 @@ La app multipage incluye:
 | **Estimación** | `POST /api/v1/estimate` + histórico local |
 | **Conversación** | Sesiones, adjuntos, ACB + histórico de `chat_sessions` |
 | **RAG Lab** | `POST /embeddings/compare` sobre `data/budgets_sample.json` |
-| **RAG Estimación** | Wizard 6 etapas sobre `/v1/estimate/stages/*` (S09) |
-| **Ajustes IA** | `GET/PUT /api/v1/config/models` (overrides runtime en Redis) |
+| **RAG Estimación** | Wizard S10: reformulación → estructura → horas → revisión |
+| **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 
 Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`).
 En Docker Compose el volumen `./streamlit_ui` conserva el histórico al recrear el contenedor.

@@ -63,7 +63,7 @@ def serialize_budget(budget: Budget) -> str:
 
 def component_metadata(budget: Budget, component: BudgetComponent) -> dict:
     """Filterable metadata that travels with a component-level chunk."""
-    return {
+    meta = {
         "budget_id": budget.budget_id,
         "component_id": component.component_id,
         "client_sector": budget.client_metadata.sector,
@@ -72,6 +72,9 @@ def component_metadata(budget: Budget, component: BudgetComponent) -> dict:
         "complexity": component.complexity,
         "estimated_hours": component.estimated_hours,
     }
+    if component.module:
+        meta["module"] = component.module
+    return meta
 
 
 class JSONStructuralChunker(Chunker):

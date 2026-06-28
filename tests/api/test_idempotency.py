@@ -40,14 +40,26 @@ def generate_calls(monkeypatch):
             "GENERATION_REASONING_EFFORT": "medium",
             "RETRIEVAL_TOP_K": 10,
             "RETRIEVAL_DISTANCE_THRESHOLD": 0.6,
+            "RETRIEVAL_RECALL_TOP_K": 50,
+            "RERANK_TOP_N": 5,
+            "RRF_K": 60,
             "MAX_CONTEXT_TOKENS": 100_000,
+        },
+    )()
+
+    runtime = type(
+        "R",
+        (),
+        {
+            "effective_search_mode": staticmethod(lambda: "vector"),
+            "effective_rerank": staticmethod(lambda: False),
         },
     )()
 
     async def fake_reformulate(transcript):
         return EstimationQuery(function="ecommerce storefront", sector="ecommerce")
 
-    async def fake_search(query_embedding, **kwargs):
+    async def fake_retrieve(**kwargs):
         return RetrievalResult(
             chunks=[
                 RetrievedChunk(
@@ -63,7 +75,7 @@ def generate_calls(monkeypatch):
             candidates_evaluated=5,
         )
 
-    async def fake_generate(context_block, structured_query):
+    async def fake_generate(context_block, structured_query, *, include_hours=True):
         calls["generate"] += 1
         return Estimate(
             total_engineer_days=18,
@@ -77,8 +89,9 @@ def generate_calls(monkeypatch):
 
     monkeypatch.setattr(orch, "get_settings", lambda: settings)
     monkeypatch.setattr(orch, "reformulate_query", fake_reformulate)
-    monkeypatch.setattr(orch, "search_chunks", fake_search)
+    monkeypatch.setattr(orch, "retrieve", fake_retrieve)
     monkeypatch.setattr(orch, "generate_estimate", fake_generate)
+    monkeypatch.setattr(deps, "get_runtime_retrieval_config", lambda: runtime)
     monkeypatch.setattr(
         deps,
         "get_embedder",

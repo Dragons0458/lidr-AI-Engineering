@@ -9,9 +9,10 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from app.api.rate_limiting import limiter
 from app.api.security import require_retrieval_key
-from app.dependencies import get_embedder
+from app.config import get_settings
+from app.dependencies import get_embedder, get_runtime_retrieval_config
 from app.generation.rag.errors import RetrievalError
-from app.generation.rag.retriever import search_chunks
+from app.generation.rag.retrieval.pipeline import retrieve
 from app.generation.rag.schemas import RetrievalRequest, RetrievalResult
 
 log = structlog.get_logger()
@@ -34,15 +35,27 @@ async def search(request: Request, payload: RetrievalRequest) -> RetrievalResult
             status_code=500, detail="Embedding service is not available."
         )
 
+    settings = get_settings()
+    runtime = get_runtime_retrieval_config()
+    search_mode = payload.search_mode or runtime.effective_search_mode()
+    rerank = (
+        payload.rerank if payload.rerank is not None else runtime.effective_rerank()
+    )
+
     try:
         query_embedding = await asyncio.to_thread(
             embedder.embed_one, payload.query_text
         )
-        return await search_chunks(
-            query_embedding,
+        return await retrieve(
+            query_embedding=query_embedding,
             query_text=payload.query_text,
+            search_mode=search_mode,
+            rerank=rerank,
             top_k=payload.top_k,
+            recall_k=settings.RETRIEVAL_RECALL_TOP_K,
+            rerank_top_n=settings.RERANK_TOP_N,
             distance_threshold=payload.distance_threshold,
+            rrf_k=settings.RRF_K,
             sectors=payload.sectors,
             project_year_min=payload.project_year_min,
             project_year_max=payload.project_year_max,

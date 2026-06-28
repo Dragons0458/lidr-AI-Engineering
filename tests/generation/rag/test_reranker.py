@@ -82,3 +82,25 @@ def test_rerank_accepts_custom_text_extractor():
     reranker, _ = _reranker_with({"low": 0.1, "high": 0.8})
     ordered = reranker.rerank("q", candidates, top_n=2, text_of=lambda c: c["body"])
     assert [c["id"] for c in ordered] == [2, 1]
+
+
+def test_rerank_with_scores_returns_pairs_ordered_desc():
+    candidates = [
+        _Candidate(1, "weakly relevant"),
+        _Candidate(2, "highly relevant"),
+        _Candidate(3, "not relevant"),
+    ]
+    reranker, _ = _reranker_with(
+        {"weakly relevant": 0.4, "highly relevant": 0.9, "not relevant": 0.1}
+    )
+    pairs = reranker.rerank_with_scores("q", candidates, top_n=2)
+    assert len(pairs) == 2
+    assert pairs[0][0].id == 2
+    assert pairs[0][1] == 0.9
+    assert pairs[1][0].id == 1
+
+
+def test_rerank_with_scores_empty_returns_empty():
+    reranker, fake = _reranker_with({})
+    assert reranker.rerank_with_scores("q", [], top_n=5) == []
+    assert fake.calls == []

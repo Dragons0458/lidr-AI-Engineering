@@ -11,7 +11,7 @@ from openai import OpenAI
 from redisvl.utils.vectorize import OpenAITextVectorizer
 
 from app.config import get_settings
-from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.llm.runtime_config import RuntimeModelConfig, RuntimeRetrievalConfig
 from app.foundation.llm.wrapper import LLMWrapper
 from app.generation.cag.exact import EstimationCache
 from app.generation.cag.semantic import EstimationSemanticCache
@@ -49,6 +49,13 @@ def get_runtime_config() -> RuntimeModelConfig:
     """Redis-backed override store for the LLM model knobs (Settings UI)."""
     settings = get_settings()
     return RuntimeModelConfig.from_url(settings.REDIS_URL, settings)
+
+
+@lru_cache
+def get_runtime_retrieval_config() -> RuntimeRetrievalConfig:
+    """Redis-backed override store for Session 10 retrieval toggles."""
+    settings = get_settings()
+    return RuntimeRetrievalConfig.from_url(settings.REDIS_URL, settings)
 
 
 @lru_cache

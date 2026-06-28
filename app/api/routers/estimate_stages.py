@@ -1,4 +1,4 @@
-"""``POST /v1/estimate/stages/*`` — the RAG pipeline, one stage at a time (S09)."""
+"""``POST /v1/estimate/stages/*`` — the RAG pipeline, one stage at a time (S09/S10)."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from app.generation.rag.context_assembler import (
     truncate_to_token_budget,
 )
 from app.generation.rag.errors import RagError, RetrievalError
-from app.generation.rag.estimator import generate_estimate
+from app.generation.rag.estimator import generate_estimate, generate_structure
 from app.generation.rag.observability import log_stage
 from app.generation.rag.query_reformulator import compose_search_text, reformulate_query
 from app.generation.rag.retriever import search_chunks
@@ -30,6 +30,7 @@ from app.generation.rag.schemas import (
     ReformulationResult,
     RetrievalRequest,
     RetrievalResult,
+    StructureRequest,
 )
 from app.generation.rag.validation import check_coherence, validate_citations
 
@@ -91,6 +92,8 @@ async def retrieve(request: Request, payload: RetrievalRequest) -> RetrievalResu
                 project_year_min=payload.project_year_min,
                 project_year_max=payload.project_year_max,
                 chunk_types=payload.chunk_types,
+                search_mode=payload.search_mode,
+                rerank=payload.rerank,
             )
     except RetrievalError as exc:
         raise HTTPException(status_code=502, detail="Retrieval failed.") from exc
@@ -126,6 +129,27 @@ async def assemble(request: Request, payload: AssembleRequest) -> AssembleResult
 
 
 @router.post(
+    "/structure",
+    response_model=GenerateResult,
+    dependencies=[Depends(require_estimate_key)],
+)
+@limiter.limit("15/minute")
+async def structure(request: Request, payload: StructureRequest) -> GenerateResult:
+    """Session 10 — generate module→task structure without hours or sources."""
+    request_id = get_request_id(request)
+    try:
+        with log_stage("structure", request_id):
+            estimate = await generate_structure(payload.query)
+    except RagError as exc:
+        log.error("stage_failed", stage="structure", error_type=type(exc).__name__)
+        raise HTTPException(
+            status_code=502, detail="Structure generation failed."
+        ) from exc
+
+    return GenerateResult(estimate=estimate, fabricated_source_ids=[], coherent=True)
+
+
+@router.post(
     "/generate",
     response_model=GenerateResult,
     dependencies=[Depends(require_estimate_key)],
@@ -135,9 +159,16 @@ async def generate(request: Request, payload: GenerateRequest) -> GenerateResult
     """Stage 4 — generate the grounded estimate and report grounding signals."""
     request_id = get_request_id(request)
     try:
-        with log_stage("generation", request_id, sources=len(payload.kept_chunks)):
+        with log_stage(
+            "generation",
+            request_id,
+            sources=len(payload.kept_chunks),
+            include_hours=payload.include_hours,
+        ):
             estimate = await generate_estimate(
-                payload.context_block, structured_query=payload.query
+                payload.context_block,
+                structured_query=payload.query,
+                include_hours=payload.include_hours,
             )
     except RagError as exc:
         log.error("stage_failed", stage="generation", error_type=type(exc).__name__)

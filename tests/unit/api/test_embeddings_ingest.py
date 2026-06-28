@@ -56,12 +56,15 @@ class FakeRagIngestService:
         self.duplicate_of = duplicate_of
         self.calls: list[dict] = []
 
-    async def ingest(self, *, source_path, document_type, budget) -> IngestResponse:
+    async def ingest(
+        self, *, source_path, document_type, budget, chunk_type=None
+    ) -> IngestResponse:
         self.calls.append(
             {
                 "source_path": source_path,
                 "document_type": document_type,
                 "budget": budget,
+                "chunk_type": chunk_type,
             }
         )
         if self.duplicate_of is not None:

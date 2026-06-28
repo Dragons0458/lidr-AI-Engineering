@@ -86,11 +86,13 @@ async def search_chunks(
     rerank: bool | None = None,
 ):
     """Metadata-filtered retrieval with optional hybrid search and reranking."""
+    from app.dependencies import get_runtime_retrieval_config
     from app.generation.rag.retrieval.pipeline import retrieve
 
     settings = get_settings()
-    effective_mode = search_mode or settings.RETRIEVAL_SEARCH_MODE
-    effective_rerank = rerank if rerank is not None else settings.RERANKER_ENABLED
+    runtime = get_runtime_retrieval_config()
+    effective_mode = search_mode or runtime.effective_search_mode()
+    effective_rerank = rerank if rerank is not None else runtime.effective_rerank()
     rerank_top_n = settings.RERANK_TOP_N if effective_rerank else top_k
 
     return await retrieve(
