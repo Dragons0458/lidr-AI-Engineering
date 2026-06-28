@@ -68,6 +68,13 @@ class Settings(BaseSettings):
     IDEMPOTENCY_TTL: int = 86400
     RETRIEVAL_API_KEY: str | None = None
     ESTIMATE_API_KEY: str | None = None
+    # --- Session 10: hybrid search + cross-encoder reranking ---
+    RETRIEVAL_SEARCH_MODE: Literal["vector", "hybrid"] = "vector"
+    RERANKER_ENABLED: bool = False
+    RERANKER_MODEL: str = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    RETRIEVAL_RECALL_TOP_K: int = 50
+    RERANK_TOP_N: int = 5
+    RRF_K: int = 60
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

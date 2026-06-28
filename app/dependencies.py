@@ -107,6 +107,14 @@ def get_rag_ingest_service() -> RagIngestService | None:
 
 
 @lru_cache
+def get_reranker():
+    from app.generation.rag.retrieval.reranker import CrossEncoderReranker
+
+    settings = get_settings()
+    return CrossEncoderReranker(settings.RERANKER_MODEL)
+
+
+@lru_cache
 def get_semantic_retriever() -> SemanticRetriever | None:
     embedder = get_embedder()
     if embedder is None:

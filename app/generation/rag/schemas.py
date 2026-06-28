@@ -109,6 +109,10 @@ class RetrievedChunk(BaseModel):
     project_year: int
     chunk_type: str
     distance: float = Field(description="Cosine distance (lower = more similar).")
+    budget_id: str | None = Field(
+        default=None,
+        description="Parent budget id from chunk metadata (for evaluation).",
+    )
 
 
 class RetrievalResult(BaseModel):

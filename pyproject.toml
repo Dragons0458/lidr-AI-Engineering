@@ -52,6 +52,8 @@ dependencies = [
     "pgvector>=0.3",
     # Session 9 — RAG end-to-end API rate limiting
     "slowapi>=0.1.9",
+    # Session 10 — cross-encoder reranking (local inference)
+    "sentence-transformers>=3.0",
 ]
 
 [dependency-groups]
