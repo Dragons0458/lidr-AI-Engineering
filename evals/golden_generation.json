@@ -1,0 +1,35 @@
+{
+  "description": "Session 11 generation golden set: 5 estimable briefs with expert reference answers for RAGAS evaluation. Each ground_truth is a concrete reference estimate (modules, tasks, engineer-day ranges, cited budget ids) anchored in real corpus components from data/budgets_sample.json — NOT a behavioural rubric — so RAGAS context_precision/recall can map reference claims onto retrieved budget chunks.",
+  "cases": [
+    {
+      "id": "G1",
+      "category": "clear",
+      "question": "Necesitamos una tienda online B2C con catálogo de productos, carrito de compra e integración de pagos con Stripe (tarjeta y wallets). El stack previsto es React en frontend y Python FastAPI en backend, desplegado en AWS. Sector ecommerce, mercado España, equipo de 4-6 ingenieros. Incluir autenticación de clientes, checkout y panel básico de pedidos.",
+      "ground_truth": "Estimación esperada: módulos Payments & Billing (checkout Stripe, webhooks, ~15-25 engineer-days), Authentication (~10-15 días), Core catalog/cart (~20-30 días), Frontend UX (~15-20 días), Infra/DevOps (~8-12 días). Total aproximado 70-100 engineer-days, confidence high/medium citando presupuestos S07-ECO-001 o S07-ECO-002 del corpus."
+    },
+    {
+      "id": "G2",
+      "category": "ambiguous",
+      "question": "Queremos modernizar nuestra plataforma digital: mejorar la experiencia de usuario, conectar con más proveedores y tener mejor reporting. No tenemos aún definido si será web, móvil o ambos, ni el volumen de usuarios. Sector servicios financieros en Latinoamérica.",
+      "ground_truth": "Estimación de referencia (rango amplio por canal y escala sin definir): Authentication & Access con OAuth/JWT (~15 engineer-days, análogo al 'OAuth and JWT authentication service' de S07-FIN-001, 120h); Provider Integrations para conectar nuevos proveedores (~12-18 engineer-days); Reporting & BI dashboards (~14 engineer-days, análogo al 'Advisor review dashboard' de S07-FIN-002, 115h, y a 'Operations BI dashboards' de S07-HLT-003, 110h); Frontend modernization (~15-20 engineer-days). Total 55-90 engineer-days, confidence medium/low: la indefinición de canal (web/móvil) y de volumen de usuarios se expresa con rangos amplios y assumptions explícitas, no con un número único."
+    },
+    {
+      "id": "G3",
+      "category": "conflicting_sources",
+      "question": "Plataforma de telemedicina para citas, mensajería segura y monitorización de dispositivos médicos conectados. Cumplimiento HIPAA-like, apps para paciente y médico, integración con wearables. Sector salud, escala media.",
+      "ground_truth": "Estimación de referencia en banda por contradicción entre fuentes: Appointments & Scheduling (~15 engineer-days, basado en 'Appointment booking' de S07-HLT-001, 120h); Secure Messaging (~17 engineer-days, basado en 'Secure patient messaging' de S07-HLT-001, 135h); Device Monitoring & Alerts (~18-19 engineer-days, basado en 'Medical device ingestion' 150h y 'Clinical alert rules' 140h de S07-HLT-002); Patient & Doctor apps (~20 engineer-days); HIPAA-like Compliance (~12 engineer-days, sin componente histórico directo → assumption). Total 85-120 engineer-days, confidence medium: S07-HLT-001 y S07-HLT-002 difieren en la base horaria del solapamiento dispositivos/mensajería, por lo que la referencia es una banda y no un único número."
+    },
+    {
+      "id": "G4",
+      "category": "abstention",
+      "question": "Desarrollo de un motor de trading cuántico con latencia sub-nanosegundo y optimización de portafolios usando computación cuántica real, integrado con nuestro ERP legacy de 1998. No hay presupuestos históricos comparables en nuestro repositorio.",
+      "ground_truth": "Respuesta de referencia: abstención. El corpus no contiene presupuestos comparables para trading cuántico/computación cuántica ni para integración con un ERP legacy de 1998, por lo que la respuesta correcta es confidence=insufficient, sin total_engineer_days ni módulos con cifras, y con insufficient_context_explanation señalando la ausencia de análogos históricos. No inventar horas ni módulos."
+    },
+    {
+      "id": "G5",
+      "category": "baseline",
+      "question": "En la reunión acordamos construir una plataforma de telemedicina para programación de citas de pacientes, mensajería segura entre médico y paciente, y monitorización remota de dispositivos médicos conectados. El cliente es un hospital regional en España, stack cloud-native (Kubernetes, microservicios), integración con HIS existente y cumplimiento de normativa de datos de salud. Equipo mixto backend/frontend/mobile, proyecto de 6-9 meses.",
+      "ground_truth": "Estimación de referencia detallada: Appointments & Scheduling (~15 engineer-days, basado en 'Appointment booking' de S07-HLT-001, 120h); Secure Messaging (~17 engineer-days, basado en 'Secure patient messaging' de S07-HLT-001, 135h); Device Monitoring (~18-19 engineer-days, basado en 'Medical device ingestion' 150h y 'Clinical alert rules' 140h de S07-HLT-002); Integrations/HIS (~12-15 engineer-days); Compliance & data protection (~12 engineer-days); Mobile apps paciente/médico (~20 engineer-days); QA & Testing (~10 engineer-days); Project Management (~8 engineer-days). Total 100-140 engineer-days, confidence high, citando S07-HLT-001 y S07-HLT-002 con citas verificables por línea."
+    }
+  ]
+}

@@ -6,6 +6,7 @@ from app.generation.rag.schemas import (
     Estimate,
     RetrievedChunk,
     SourceCitation,
+    SourceReference,
     TaskItem,
     WorkModule,
 )
@@ -24,7 +25,10 @@ def _chunk(chunk_id: int) -> RetrievedChunk:
 
 
 def _estimate(
-    *, source_ids: list[int], component_sources: list[int], confidence="high"
+    *,
+    source_ids: list[int],
+    component_sources: list[SourceReference],
+    confidence="high",
 ) -> Estimate:
     return Estimate(
         total_engineer_days=20,
@@ -33,7 +37,12 @@ def _estimate(
             WorkModule(
                 name="Authentication",
                 tasks=[
-                    TaskItem(name="Auth", engineer_days=20, sources=component_sources)
+                    TaskItem(
+                        name="Auth",
+                        engineer_days=20,
+                        grounded=bool(component_sources),
+                        sources=component_sources,
+                    )
                 ],
             )
         ],
@@ -47,15 +56,26 @@ def _estimate(
     )
 
 
+def _ref(chunk_id: int) -> SourceReference:
+    return SourceReference(
+        chunk_id=chunk_id,
+        document_id="S07-FIN-001",
+        evidence="Estimated hours: 120",
+    )
+
+
 def test_validate_citations_all_valid_returns_empty():
     chunks = [_chunk(1), _chunk(2)]
-    estimate = _estimate(source_ids=[1, 2], component_sources=[1])
+    estimate = _estimate(source_ids=[1, 2], component_sources=[_ref(1)])
     assert validate_citations(estimate, chunks) == []
 
 
 def test_validate_citations_flags_fabricated_ids():
     chunks = [_chunk(1), _chunk(2)]
-    estimate = _estimate(source_ids=[1, 99], component_sources=[42])
+    estimate = _estimate(
+        source_ids=[1, 99],
+        component_sources=[_ref(42)],
+    )
     assert validate_citations(estimate, chunks) == [42, 99]
 
 
@@ -66,7 +86,7 @@ def test_validate_citations_no_sources_is_valid():
 
 
 def test_validate_citations_empty_retrieval_flags_every_cited_id():
-    estimate = _estimate(source_ids=[1], component_sources=[2])
+    estimate = _estimate(source_ids=[1], component_sources=[_ref(2)])
     assert validate_citations(estimate, []) == [1, 2]
 
 
@@ -93,5 +113,5 @@ def test_check_coherence_insufficient_with_numbers_is_incoherent():
 
 
 def test_check_coherence_non_insufficient_always_true():
-    estimate = _estimate(source_ids=[1], component_sources=[1], confidence="low")
+    estimate = _estimate(source_ids=[1], component_sources=[_ref(1)], confidence="low")
     assert check_coherence(estimate) is True
