@@ -14,6 +14,7 @@ from app.generation.rag.schemas import (
     RetrievalResult,
     RetrievedChunk,
     SourceCitation,
+    SourceReference,
     TaskItem,
     WorkModule,
 )
@@ -67,7 +68,18 @@ def _good_estimate() -> Estimate:
             WorkModule(
                 name="Checkout",
                 tasks=[
-                    TaskItem(name="Cart & payment flow", engineer_days=18, sources=[1])
+                    TaskItem(
+                        name="Cart & payment flow",
+                        engineer_days=18,
+                        grounded=True,
+                        sources=[
+                            SourceReference(
+                                chunk_id=1,
+                                document_id="S07-ECO-001",
+                                evidence="Estimated hours: 140",
+                            )
+                        ],
+                    )
                 ],
             )
         ],
