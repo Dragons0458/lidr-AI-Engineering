@@ -128,6 +128,13 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   `POST /v1/estimate/stages/structure` y `POST /v1/estimate/tasks/hours`), runtime config
   de recuperación (`GET/PUT /api/v1/config/retrieval`) y scripts de corpus
   (`build_multi_index_corpus.py`, `build_task_corpus.py`).
+- **Sesión 11** (pre-sesión): citación verificable **a nivel de línea** en la ruta
+  grounded (`SourceReference` con `chunk_id` + `document_id` + `evidence` verbatim,
+  `TaskItem.grounded`, `verify_citations` → `CitationReport` con logging por
+  `request_id`), golden set de **generación** (`evals/golden_generation.json`, 5 casos
+  con `ground_truth` incluyendo abstención) y evaluación offline RAGAS
+  (`scripts/eval_ragas_s11.py`: faithfulness, answer_relevancy, context_precision,
+  context_recall).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -149,6 +156,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - SQLAlchemy 2.0 + Alembic + psycopg + asyncpg + pgvector (Postgres)
 - slowapi (rate limiting Session 9)
 - sentence-transformers + PyTorch (cross-encoder reranking Session 10)
+- ragas + datasets + langchain-google-vertexai (evaluación offline Session 11, grupo `dev`)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -212,13 +220,16 @@ app/
       task_hours.py              # Per-task hours from historical_task corpus (S10)
       estimator.py               # estimate_from_transcript + generate_structure (S09/S10)
       query_reformulator.py      # transcript → EstimationQuery (S09)
-      context_assembler.py       # <source> XML block + token budget (S09)
+      context_assembler.py       # <source> XML block + token budget (S09/S11 document_id)
+      validation.py              # verify_citations + CitationReport (S11)
+      serialization.py           # render_estimate_as_text for RAGAS (S11)
       idempotency.py             # Redis/in-memory idempotency store (S09)
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
 data/
 evals/
   golden_retrieval.json          # Golden set S10 (5 queries, ids S07-*)
+  golden_generation.json         # Golden set S11 (5 briefs + ground_truth)
   catalog/catalog.yaml
   budgets_sample.json            # 15 presupuestos sintéticos (S07)
   test_queries.json              # 6 consultas fijas para /embeddings/compare
@@ -234,6 +245,7 @@ scripts/
   report_index_sizes_s08.py      # Tamaños y uso de índices
   insert_synthetic_chunks_s08.py # Corpus sintético para demos de mantenimiento
   eval_retrieval_s10.py          # Medición precision@5 × 4 configs (S10)
+  eval_ragas_s11.py              # RAGAS faithfulness/relevancy/precision/recall (S11)
   build_multi_index_corpus.py    # Ingest transcripts + technical docs (S10)
   build_task_corpus.py           # Synthetic historical_task corpus (S10)
   sql_s08/                       # 6 scripts SQL (HNSW, halfvec, mantenimiento)
@@ -775,6 +787,34 @@ docker compose exec api python scripts/eval_retrieval_s10.py
 
 Salida: tabla **precision@5** + latencia mediana por config. Resultados y decisión
 argumentada en [`CONCLUSIONS.md`](CONCLUSIONS.md).
+
+### Evaluación RAGAS de generación (Sesión 11)
+
+Golden set `evals/golden_generation.json` (5 briefs con `ground_truth`, incluye caso de
+abstención). Requiere corpus ingerido + `OPENAI_API_KEY` + deps de evaluación:
+
+```bash
+uv sync --group dev
+DATABASE_URL=postgresql+psycopg://estimator:estimator@localhost:5433/estimator \
+  uv run python scripts/eval_ragas_s11.py
+```
+
+Opcional: cachear respuestas para recalcular métricas sin re-generar:
+
+```bash
+uv run python scripts/eval_ragas_s11.py --cache evals/ragas_cache.json
+uv run python scripts/eval_ragas_s11.py --metrics-only --cache evals/ragas_cache.json
+```
+
+Salida: tabla Markdown con **faithfulness**, **answer_relevancy**, **context_precision**,
+**context_recall** por caso + promedio. Notas en
+[`evals/ragas-metrics-note.md`](evals/ragas-metrics-note.md).
+
+Citación verificable: cada `TaskItem` en la ruta grounded expone `grounded` +
+`SourceReference` (`chunk_id`, `document_id`, `evidence`). `verify_citations` produce un
+`CitationReport` (grounded / dangling / insufficient) logueado por `request_id`. Informe
+de ejemplo en
+[`evals/citation-verification-report.md`](evals/citation-verification-report.md).
 
 ### FTS manual (smoke test)
 

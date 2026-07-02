@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 # Closed universe of client sectors present in the sample dataset. Kept as a
 # Literal so a typo or an unexpected sector fails validation loudly instead of
@@ -284,12 +284,30 @@ class Assumption(BaseModel):
     rationale: str
 
 
+class SourceReference(BaseModel):
+    """Per-line, verifiable link from a task to the retrieved chunk it derives from."""
+
+    chunk_id: int = Field(
+        description='RetrievedChunk.id — the <source id="…"> shown to the LLM.'
+    )
+    document_id: str = Field(
+        description="Parent budget/source id (RetrievedChunk.source_id or budget_id)."
+    )
+    evidence: str = Field(
+        description="Verbatim span or figure copied from the source content."
+    )
+
+
 class TaskItem(BaseModel):
     """One concrete engineering task inside a functional module, in engineer-days.
 
     ``sources`` cite the historical chunk(s) the task was derived from; a task
     with no historical analog is left uncited and should surface as an
     :class:`Assumption` instead.
+
+    Session 11: ``grounded`` + :class:`SourceReference` enable verifiable line-level
+    attribution on the grounded generation route. Structure-only generation (S10)
+    leaves ``grounded=False`` and ``sources`` empty.
     """
 
     name: str
@@ -303,9 +321,20 @@ class TaskItem(BaseModel):
         "mode (Session 10): the LLM proposes the module→task structure and the hours "
         "are derived afterwards by per-task vector search, not inferred here.",
     )
-    sources: list[int] = Field(
-        default_factory=list, description="Chunk ids that back this task."
+    grounded: bool = Field(
+        default=False,
+        description="True when the task is backed by at least one retrieved source.",
     )
+    sources: list[SourceReference] = Field(
+        default_factory=list,
+        description="Verifiable per-line citations (non-empty iff grounded).",
+    )
+
+    @model_validator(mode="after")
+    def grounded_requires_sources(self) -> TaskItem:
+        if self.grounded and not self.sources:
+            raise ValueError("grounded=True requires at least one SourceReference")
+        return self
 
 
 class WorkModule(BaseModel):

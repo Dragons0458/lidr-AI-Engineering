@@ -5,12 +5,17 @@ from __future__ import annotations
 from app.generation.rag.schemas import RetrievedChunk
 
 
+def _document_id(chunk: RetrievedChunk) -> str:
+    """Resolve the traceable parent document id for citation attribution."""
+    return chunk.source_id or chunk.budget_id or "unknown"
+
+
 def _wrap_chunk(chunk: RetrievedChunk) -> str:
     """Render a single chunk as a self-describing ``<source>`` XML element."""
     return (
-        f'<source id="{chunk.id}" sector="{chunk.sector}" '
-        f'project_year="{chunk.project_year}" chunk_type="{chunk.chunk_type}" '
-        f'distance="{chunk.distance:.4f}">\n'
+        f'<source id="{chunk.id}" document_id="{_document_id(chunk)}" '
+        f'sector="{chunk.sector}" project_year="{chunk.project_year}" '
+        f'chunk_type="{chunk.chunk_type}" distance="{chunk.distance:.4f}">\n'
         f"{chunk.content}\n"
         f"</source>"
     )
