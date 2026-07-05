@@ -96,6 +96,12 @@ class Settings(BaseSettings):
     HALLUCINATION_GATE_ENABLED: bool = True
     HALLUCINATION_JUDGE_MODEL: str = "gpt-5-mini"
     HALLUCINATION_NUMERIC_TOLERANCE: float = 0.5
+    # --- Session 12: hand-written estimation agent (Responses API) ---
+    AGENT_MODEL: str = "gpt-5"
+    AGENT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "medium"
+    AGENT_MAX_ITERATIONS: int = 10
+    AGENT_SEARCH_TOP_K: int = 5
+    AGENT_SEARCH_DISTANCE_THRESHOLD: float = 0.6
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
