@@ -53,6 +53,8 @@ def generate_calls(monkeypatch):
         {
             "effective_search_mode": staticmethod(lambda: "vector"),
             "effective_rerank": staticmethod(lambda: False),
+            "effective_augmentation": staticmethod(lambda: False),
+            "effective_hallucination_gate": staticmethod(lambda: False),
         },
     )()
 

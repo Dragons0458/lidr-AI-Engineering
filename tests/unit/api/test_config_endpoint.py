@@ -47,6 +47,8 @@ def test_get_returns_full_snapshot(client) -> None:
         "COMPRESSION_MODEL",
         "PROPOSITIONAL_CHUNKER_MODEL",
         "CONTEXTUAL_CHUNKER_MODEL",
+        "HALLUCINATION_JUDGE_MODEL",
+        "AUGMENTATION_MODEL",
     }
     assert "gpt-4o" in body["available_models"]
 

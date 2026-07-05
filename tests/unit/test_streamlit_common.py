@@ -8,6 +8,7 @@ from streamlit_ui.common import (
 )
 from streamlit_ui.rag import (
     STRATEGY_CATALOG,
+    build_retrieval_update_payload,
     build_settings_update_payload,
     cost_hint,
     label_for,
@@ -93,3 +94,28 @@ def test_build_settings_update_payload_maps_empty_to_none() -> None:
         {"PRIMARY_MODEL": "gpt-4o", "FALLBACK_MODEL": ""}
     )
     assert payload == {"PRIMARY_MODEL": "gpt-4o", "FALLBACK_MODEL": None}
+
+
+def test_build_retrieval_update_payload_includes_s11_flags() -> None:
+    payload = build_retrieval_update_payload(
+        search_mode=None,
+        rerank=None,
+        routing_enabled=None,
+        query_transform_enabled=None,
+        temporal_decay_enabled=None,
+        task_hours_top_k=None,
+        task_hours_distance_threshold=None,
+        hallucination_gate_enabled=False,
+        augmentation_enabled=True,
+        synthesis_enabled=True,
+        touched={
+            "hallucination_gate_enabled",
+            "augmentation_enabled",
+            "synthesis_enabled",
+        },
+    )
+    assert payload == {
+        "hallucination_gate_enabled": False,
+        "augmentation_enabled": True,
+        "synthesis_enabled": True,
+    }

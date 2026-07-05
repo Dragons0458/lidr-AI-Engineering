@@ -13,6 +13,7 @@ from app.api.embeddings import router as embeddings_router
 from app.api.estimations import router as estimation_router
 from app.api.ingestion import router as ingestion_router
 from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
+from app.api.routers.corpus_index import router as corpus_index_router
 from app.api.routers.estimate import router as estimate_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
@@ -141,6 +142,7 @@ app.include_router(retrieval_advanced_router)
 app.include_router(estimate_router)
 app.include_router(estimate_stages_router)
 app.include_router(estimate_tasks_router)
+app.include_router(corpus_index_router)
 
 
 @app.get("/health")

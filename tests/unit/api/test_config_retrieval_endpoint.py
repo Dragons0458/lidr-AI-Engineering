@@ -56,6 +56,22 @@ def test_put_retrieval_rejects_invalid_search_mode(client: TestClient) -> None:
     assert response.status_code == 422
 
 
+def test_put_retrieval_s11_toggles(client: TestClient) -> None:
+    response = client.put(
+        "/api/v1/config/retrieval",
+        json={
+            "hallucination_gate_enabled": False,
+            "augmentation_enabled": False,
+            "synthesis_enabled": False,
+        },
+    )
+    assert response.status_code == 200
+    body = response.json()["retrieval"]
+    assert body["HALLUCINATION_GATE_ENABLED"]["effective"] is False
+    assert body["AUGMENTATION_ENABLED"]["effective"] is False
+    assert body["SYNTHESIS_ENABLED"]["effective"] is False
+
+
 def test_put_retrieval_503_when_redis_unavailable(monkeypatch) -> None:
     broken = MagicMock()
     broken.hget.return_value = None

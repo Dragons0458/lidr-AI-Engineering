@@ -7,7 +7,8 @@ the vectors plus aggregate stats.
 
 from __future__ import annotations
 
-from datetime import date
+import uuid
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
@@ -427,6 +428,9 @@ class AssembleRequest(BaseModel):
 
     chunks: list[RetrievedChunk]
     max_context_tokens: int | None = Field(default=None, ge=256, le=64_000)
+    augment: bool = False
+    compress: bool = True
+    reorder: bool = True
 
 
 class AssembleResult(BaseModel):
@@ -437,6 +441,7 @@ class AssembleResult(BaseModel):
     kept_chunks: list[RetrievedChunk]
     dropped_count: int = Field(ge=0, description="Chunks dropped by the token budget.")
     token_count: int = Field(ge=0, description="Tokens in the assembled context block.")
+    augmented: bool = False
 
 
 class StructureRequest(BaseModel):
@@ -505,6 +510,14 @@ class TaskNeighbor(BaseModel):
     )
 
 
+class HourRange(BaseModel):
+    """Hour spread when historical neighbours contradict."""
+
+    low: int = Field(ge=0)
+    high: int = Field(ge=0)
+    reason: str
+
+
 class TaskHoursEstimate(BaseModel):
     """Hours derived for one task from the historical task corpus.
 
@@ -538,6 +551,10 @@ class TaskHoursEstimate(BaseModel):
         default_factory=list,
         description="The historical tasks the hours were derived from.",
     )
+    hours_range: HourRange | None = Field(
+        default=None,
+        description="Present only when neighbours contradict; point estimate stays consensus.",
+    )
 
 
 class TaskHoursTaskInput(BaseModel):
@@ -564,3 +581,77 @@ class TaskHoursResult(BaseModel):
     """Per-task hours estimates, in the order the tasks were submitted."""
 
     tasks: list[TaskHoursEstimate] = Field(default_factory=list)
+
+
+# ---------------------------------------------------------------------------
+# Session 11 — hallucination gate + corpus index
+# ---------------------------------------------------------------------------
+
+
+LineGateStatus = Literal["grounded", "degraded", "insufficient"]
+
+
+class LineVerdict(BaseModel):
+    module: str
+    component: str
+    entailed: bool
+    reason: str
+
+
+class LineGate(BaseModel):
+    module: str
+    component: str
+    status: LineGateStatus
+    numeric_deviation: float | None = Field(default=None, ge=0.0)
+    reason: str = ""
+
+
+class HallucinationReport(BaseModel):
+    total_lines: int
+    grounded_lines: int
+    degraded_lines: int
+    insufficient_lines: int
+    lines: list[LineGate] = Field(default_factory=list)
+
+    @property
+    def has_degraded(self) -> bool:
+        return self.degraded_lines > 0
+
+
+class VerifyRequest(BaseModel):
+    estimate: Estimate
+    kept_chunks: list[RetrievedChunk] = Field(default_factory=list)
+    use_judge: bool = True
+
+
+class IndexRunRequest(BaseModel):
+    documents: list[Budget] = Field(min_length=1, max_length=200)
+    document_type: str = "historical_budget"
+    chunk_type: str = "budget_component"
+
+
+class IndexRunResponse(BaseModel):
+    job_id: uuid.UUID
+    documents_total: int
+    status: Literal["pending", "running", "completed", "failed"]
+
+
+class IndexJobView(BaseModel):
+    job_id: uuid.UUID
+    status: Literal["pending", "running", "completed", "failed"]
+    documents_processed: int
+    error_message: str | None
+    started_at: datetime
+    finished_at: datetime | None
+
+
+class CollectionStats(BaseModel):
+    collection: str
+    documents: int
+    chunks: int
+    hnsw_indexed: bool
+
+
+class CorpusStats(BaseModel):
+    collections: list[CollectionStats]
+    total_chunks: int

@@ -15,9 +15,12 @@ from pydantic import BaseModel, Field
 from app.config import Settings, get_settings
 from app.dependencies import get_runtime_config, get_runtime_retrieval_config
 from app.foundation.llm.runtime_config import (
+    AUGMENTATION_KEY,
+    HALLUCINATION_GATE_KEY,
     MODEL_KEYS,
     QUERY_TRANSFORM_KEY,
     ROUTING_KEY,
+    SYNTHESIS_KEY,
     TEMPORAL_DECAY_KEY,
     RuntimeConfigUnavailable,
     RuntimeModelConfig,
@@ -32,6 +35,9 @@ _STAGE_TOGGLE_KEYS = {
     "routing_enabled": ROUTING_KEY,
     "query_transform_enabled": QUERY_TRANSFORM_KEY,
     "temporal_decay_enabled": TEMPORAL_DECAY_KEY,
+    "hallucination_gate_enabled": HALLUCINATION_GATE_KEY,
+    "augmentation_enabled": AUGMENTATION_KEY,
+    "synthesis_enabled": SYNTHESIS_KEY,
 }
 
 router = APIRouter(prefix="/api/v1/config", tags=["config"])
@@ -102,6 +108,15 @@ class RetrievalUpdateRequest(BaseModel):
     )
     task_hours_distance_threshold: float | None = Field(
         default=None, ge=0.0, le=2.0, description="Red-flag floor for task-hours match."
+    )
+    hallucination_gate_enabled: bool | None = Field(
+        default=None, description="Enable semantic hallucination gate (S11)."
+    )
+    augmentation_enabled: bool | None = Field(
+        default=None, description="Enable deterministic chunk augmentation (S11)."
+    )
+    synthesis_enabled: bool | None = Field(
+        default=None, description="Enable hour-range synthesis on contradiction (S11)."
     )
 
 

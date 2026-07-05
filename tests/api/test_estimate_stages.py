@@ -136,6 +136,21 @@ def test_assemble_wraps_chunks_in_xml(client):
     assert body["dropped_count"] == 0
     assert body["token_count"] > 0
     assert len(body["kept_chunks"]) == 2
+    assert body["augmented"] is False
+
+
+def test_assemble_with_augment_flag(client):
+    payload = {
+        "chunks": [
+            _chunk(1, content="filler\nAuth :: 12h").model_dump(),
+            _chunk(2, content="more filler\nPay :: 8h").model_dump(),
+        ],
+        "augment": True,
+    }
+    r = client.post("/v1/estimate/stages/assemble", json=payload, headers=_h())
+    assert r.status_code == 200
+    body = r.json()
+    assert body["augmented"] is True
 
 
 def test_assemble_drops_chunks_over_budget(client):
@@ -289,3 +304,26 @@ def test_generate_with_include_hours_false(client, monkeypatch):
     r = client.post("/v1/estimate/stages/generate", json=payload, headers=_h())
     assert r.status_code == 200
     assert captured.get("include_hours") is False
+
+
+def test_verify_stage_without_judge(client, monkeypatch):
+    async def fake_gate(estimate, chunks, **kwargs):
+        from app.generation.rag.schemas import HallucinationReport
+
+        return HallucinationReport(
+            total_lines=1,
+            grounded_lines=0,
+            degraded_lines=1,
+            insufficient_lines=0,
+            lines=[],
+        )
+
+    monkeypatch.setattr(stages, "gate_estimate", fake_gate)
+    estimate = Estimate(confidence="high", reasoning="r")
+    r = client.post(
+        "/v1/estimate/stages/verify",
+        json={"estimate": estimate.model_dump(), "kept_chunks": [], "use_judge": False},
+        headers=_h(),
+    )
+    assert r.status_code == 200
+    assert r.json()["degraded_lines"] == 1

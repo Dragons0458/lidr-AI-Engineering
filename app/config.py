@@ -86,6 +86,16 @@ class Settings(BaseSettings):
     ROUTER_MAX_TARGETS: int = 3
     TASK_HOURS_TOP_K: int = 5
     TASK_HOURS_DISTANCE_THRESHOLD: float = 0.45
+    # --- Session 11: augmentation + synthesis + hallucination gate ---
+    AUGMENTATION_ENABLED: bool = True
+    AUGMENTATION_COMPRESS: bool = True
+    AUGMENTATION_REORDER: bool = True
+    AUGMENTATION_MODEL: str = "gpt-5-mini"
+    SYNTHESIS_ENABLED: bool = True
+    SYNTHESIS_CONTRADICTION_THRESHOLD: float = 0.35
+    HALLUCINATION_GATE_ENABLED: bool = True
+    HALLUCINATION_JUDGE_MODEL: str = "gpt-5-mini"
+    HALLUCINATION_NUMERIC_TOLERANCE: float = 0.5
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

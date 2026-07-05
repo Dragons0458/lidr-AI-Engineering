@@ -281,6 +281,14 @@ async def estimate_from_transcript(
     kept = truncate_to_token_budget(
         retrieval.chunks, settings.MAX_CONTEXT_TOKENS, encoder
     )
+    if runtime_retrieval.effective_augmentation():
+        from app.generation.rag.quality.augmentation import augment_chunks
+
+        kept = augment_chunks(
+            kept,
+            compress=settings.AUGMENTATION_COMPRESS,
+            reorder=settings.AUGMENTATION_REORDER,
+        )
     context_block = build_context_block(kept)
 
     # 5. Generate the grounded estimate.
@@ -307,6 +315,28 @@ async def estimate_from_transcript(
         if report.has_dangling:
             log.warning("citations_unrepaired", request_id=request_id)
             estimate = degrade_dangling_tasks(estimate, report)
+
+    # 6.5. Hallucination gate — downgrade confidence when lines are degraded.
+    if runtime_retrieval.effective_hallucination_gate():
+        from app.generation.rag.quality.hallucination import gate_estimate
+
+        with log_stage("hallucination_gate", request_id):
+            gate = await gate_estimate(
+                estimate,
+                kept,
+                tolerance=settings.HALLUCINATION_NUMERIC_TOLERANCE,
+                judge_model=settings.HALLUCINATION_JUDGE_MODEL,
+            )
+        log.info(
+            "hallucination_report",
+            request_id=request_id,
+            total_lines=gate.total_lines,
+            grounded_lines=gate.grounded_lines,
+            degraded_lines=gate.degraded_lines,
+            insufficient_lines=gate.insufficient_lines,
+        )
+        if gate.has_degraded and estimate.confidence in ("high", "medium"):
+            estimate = estimate.model_copy(update={"confidence": "low"})
 
     # 7. Coherence guard: one repair attempt, then reject.
     if not check_coherence(estimate):

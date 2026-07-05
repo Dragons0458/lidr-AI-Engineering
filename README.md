@@ -128,13 +128,15 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   `POST /v1/estimate/stages/structure` y `POST /v1/estimate/tasks/hours`), runtime config
   de recuperación (`GET/PUT /api/v1/config/retrieval`) y scripts de corpus
   (`build_multi_index_corpus.py`, `build_task_corpus.py`).
-- **Sesión 11** (pre-sesión): citación verificable **a nivel de línea** en la ruta
-  grounded (`SourceReference` con `chunk_id` + `document_id` + `evidence` verbatim,
-  `TaskItem.grounded`, `verify_citations` → `CitationReport` con logging por
-  `request_id`), golden set de **generación** (`evals/golden_generation.json`, 5 casos
-  con `ground_truth` incluyendo abstención) y evaluación offline RAGAS
-  (`scripts/eval_ragas_s11.py`: faithfulness, answer_relevancy, context_precision,
-  context_recall).
+- **Sesión 11**: citación verificable **a nivel de línea**, augmentation determinista
+  (compress + edge-loading), síntesis de horas con rango ante contradicciones,
+  gate semántico de alucinaciones (ancla numérica asimétrica + juez LLM),
+  reindexación incremental del corpus + índices HNSW halfvec (migración `0005`),
+  harness de evaluación de generación (`scripts/eval_generation_s11.py`,
+  `scripts/score_ragas_s11.py`, baseline `evals/ragas_baseline_s11.json`) y UI
+  Streamlit (toggles S11 en Ajustes, `hours_range` + gate en RAG Estimación,
+  panel Corpus Index). Pre-sesión ya en `main`: `SourceReference`/`grounded`,
+  `verify_citations`, `evals/golden_generation.json`, `scripts/eval_ragas_s11.py`.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -222,7 +224,9 @@ app/
       query_reformulator.py      # transcript → EstimationQuery (S09)
       context_assembler.py       # <source> XML block + token budget (S09/S11 document_id)
       validation.py              # verify_citations + CitationReport (S11)
+      quality/                   # augmentation, synthesis, hallucination gate (S11)
       serialization.py           # render_estimate_as_text for RAGAS (S11)
+      index_service.py           # CorpusIndexService incremental expansion (S11)
       idempotency.py             # Redis/in-memory idempotency store (S09)
   ingestion/                     # Pipeline offline S06 (sin cambios)
 alembic/
@@ -230,6 +234,9 @@ data/
 evals/
   golden_retrieval.json          # Golden set S10 (5 queries, ids S07-*)
   golden_generation.json         # Golden set S11 (5 briefs + ground_truth)
+  ragas_baseline_s11.json        # Baseline metrics for --gate (S11)
+  RAGAS_BASELINE_S11.md          # Human-readable baseline table (S11)
+  task_corpus_contradictions.json # 2 projects, same task name, different hours (S11)
   catalog/catalog.yaml
   budgets_sample.json            # 15 presupuestos sintéticos (S07)
   test_queries.json              # 6 consultas fijas para /embeddings/compare
@@ -246,6 +253,9 @@ scripts/
   insert_synthetic_chunks_s08.py # Corpus sintético para demos de mantenimiento
   eval_retrieval_s10.py          # Medición precision@5 × 4 configs (S10)
   eval_ragas_s11.py              # RAGAS faithfulness/relevancy/precision/recall (S11)
+  eval_generation_s11.py         # Generation eval harness + config compare (S11)
+  score_ragas_s11.py             # Isolated RAGAS scorer for collected samples (S11)
+  build_contradictions_s11.py    # Ingest contradiction corpus for synthesis demo (S11)
   build_multi_index_corpus.py    # Ingest transcripts + technical docs (S10)
   build_task_corpus.py           # Synthetic historical_task corpus (S10)
   sql_s08/                       # 6 scripts SQL (HNSW, halfvec, mantenimiento)
@@ -264,7 +274,8 @@ streamlit_ui/
     2_Conversacion.py
     3_RAG_Lab.py
     4_Ajustes_IA.py
-    5_RAG_Estimacion.py          # Wizard S10: reformulación → estructura → horas → revisión
+    5_RAG_Estimacion.py          # Wizard S10 + hours_range + hallucination gate (S11)
+    6_Corpus_Index.py            # Corpus stats + incremental index runs (S11)
 tests/unit/{api,domain,foundation,generation}/…
 ```
 
@@ -348,6 +359,16 @@ QUERY_MAX_SUBQUERIES=4
 ROUTER_MAX_TARGETS=3
 TASK_HOURS_TOP_K=5
 TASK_HOURS_DISTANCE_THRESHOLD=0.45
+# Session 11 — augmentation, synthesis, hallucination gate (defaults ON)
+AUGMENTATION_ENABLED=true
+AUGMENTATION_COMPRESS=true
+AUGMENTATION_REORDER=true
+AUGMENTATION_MODEL=gpt-5-mini
+SYNTHESIS_ENABLED=true
+SYNTHESIS_CONTRADICTION_THRESHOLD=0.35
+HALLUCINATION_GATE_ENABLED=true
+HALLUCINATION_JUDGE_MODEL=gpt-5-mini
+HALLUCINATION_NUMERIC_TOLERANCE=0.5
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -381,7 +402,9 @@ Endpoints locales predeterminados:
 - `POST /v1/retrieval/search` (búsqueda filtrada con `X-API-Key`, S09)
 - `POST /v1/retrieval/advanced-search` (multi-índice + routing + transform, S10)
 - `POST /v1/estimate/from-transcript` (estimación fundamentada, S09)
-- `POST /v1/estimate/stages/{reformulate,retrieve,assemble,structure,generate}` (wizard, S09/S10)
+- `POST /v1/estimate/stages/{reformulate,retrieve,assemble,structure,generate,verify}` (wizard, S09/S10/S11)
+- `POST /embeddings/index/runs` (202 — expansión incremental del corpus, S11)
+- `GET /embeddings/index/jobs/{job_id}` / `GET /embeddings/index/stats` (S11)
 - `POST /v1/estimate/tasks/hours` (horas por tarea desde corpus histórico, S10)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
@@ -799,6 +822,44 @@ DATABASE_URL=postgresql+psycopg://estimator:estimator@localhost:5433/estimator \
   uv run python scripts/eval_ragas_s11.py
 ```
 
+Harness de generación con gating contra baseline y comparación de configs:
+
+```bash
+# Colectar muestras (stack arriba) sin RAGAS
+uv run python scripts/eval_generation_s11.py --gate --config full --collect-only s.json
+
+# Puntuar en venv aislado
+uv run python scripts/score_ragas_s11.py s.json
+
+# Gate completo (colecta + RAGAS + comparación con evals/ragas_baseline_s11.json)
+uv run python scripts/eval_generation_s11.py --gate --config full
+
+# Scoreboard de configs nombradas
+uv run python scripts/eval_generation_s11.py --compare
+```
+
+Migración HNSW halfvec (las tres tablas de chunks):
+
+```bash
+uv run alembic upgrade head   # aplica 0005_session11_hnsw_multi_index
+uv run alembic downgrade -1   # revierte solo los índices HNSW
+```
+
+Corpus de contradicciones para síntesis (`hours_range` en tareas de notificaciones):
+
+```bash
+docker compose exec api python scripts/build_contradictions_s11.py
+```
+
+Runtime config S11 (toggles ON por defecto; también en Ajustes IA):
+
+```bash
+curl -s http://localhost:8000/api/v1/config/retrieval | jq '.retrieval.HALLUCINATION_GATE_ENABLED'
+curl -s -X PUT http://localhost:8000/api/v1/config/retrieval \
+  -H 'Content-Type: application/json' \
+  -d '{"augmentation_enabled":false,"synthesis_enabled":true}' | jq
+```
+
 Opcional: cachear respuestas para recalcular métricas sin re-generar:
 
 ```bash
@@ -838,7 +899,8 @@ La app multipage incluye:
 | **Estimación** | `POST /api/v1/estimate` + histórico local |
 | **Conversación** | Sesiones, adjuntos, ACB + histórico de `chat_sessions` |
 | **RAG Lab** | `POST /embeddings/compare` sobre `data/budgets_sample.json` |
-| **RAG Estimación** | Wizard S10: reformulación → estructura → horas → revisión |
+| **RAG Estimación** | Wizard S10 + `hours_range` + gate de alucinaciones (S11) |
+| **Corpus Index** | Stats por colección + expansión incremental (`/embeddings/index/*`) |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 
 Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`).

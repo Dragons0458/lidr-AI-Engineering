@@ -29,6 +29,7 @@ from app.generation.rag.chunking.strategies import (
 from app.foundation.persistence.async_database import get_async_session_factory
 from app.generation.rag.embedding.embedder import OpenAIEmbedder
 from app.generation.rag.ingest_service import RagIngestService
+from app.generation.rag.index_service import CorpusIndexService
 from app.generation.rag.retriever import SemanticRetriever
 from app.generation.rag.store.repository import ChunkStore
 from app.ingestion.catalog import DataCatalog, load_catalog
@@ -111,6 +112,14 @@ def get_rag_ingest_service() -> RagIngestService | None:
         session_factory=get_async_session_factory(),
         store=get_chunk_store(),
     )
+
+
+@lru_cache
+def get_corpus_index_service() -> CorpusIndexService | None:
+    ingest = get_rag_ingest_service()
+    if ingest is None:
+        return None
+    return CorpusIndexService(ingest=ingest)
 
 
 @lru_cache

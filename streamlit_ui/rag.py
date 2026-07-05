@@ -98,6 +98,14 @@ MODEL_KNOB_LABELS: dict[str, dict[str, str]] = {
         "label": "Contextual chunker model",
         "description": "LLM for contextual retrieval chunking.",
     },
+    "HALLUCINATION_JUDGE_MODEL": {
+        "label": "Hallucination judge model",
+        "description": "LLM judge for the semantic hallucination gate (S11).",
+    },
+    "AUGMENTATION_MODEL": {
+        "label": "Augmentation model",
+        "description": "Reserved for abstractive augmentation; active path is deterministic (S11).",
+    },
 }
 
 RETRIEVAL_KNOB_LABELS: dict[str, dict[str, str]] = {
@@ -128,6 +136,18 @@ RETRIEVAL_KNOB_LABELS: dict[str, dict[str, str]] = {
     "TASK_HOURS_DISTANCE_THRESHOLD": {
         "label": "Task-hours distance threshold",
         "description": "Red-flag floor: no match beyond this cosine distance.",
+    },
+    "HALLUCINATION_GATE_ENABLED": {
+        "label": "Hallucination gate",
+        "description": "Semantic gate on grounded estimate lines (S11).",
+    },
+    "AUGMENTATION_ENABLED": {
+        "label": "Chunk augmentation",
+        "description": "Deterministic compress + edge-loading reorder (S11).",
+    },
+    "SYNTHESIS_ENABLED": {
+        "label": "Hour-range synthesis",
+        "description": "Expose hour ranges when historical neighbours contradict (S11).",
     },
 }
 
@@ -173,6 +193,9 @@ def build_retrieval_update_payload(
     temporal_decay_enabled: bool | None,
     task_hours_top_k: int | None,
     task_hours_distance_threshold: float | None,
+    hallucination_gate_enabled: bool | None = None,
+    augmentation_enabled: bool | None = None,
+    synthesis_enabled: bool | None = None,
     touched: set[str],
 ) -> dict[str, object | None]:
     """Build PUT /config/retrieval body from UI fields (only touched keys)."""
@@ -191,6 +214,12 @@ def build_retrieval_update_payload(
         payload["task_hours_top_k"] = task_hours_top_k
     if "task_hours_distance_threshold" in touched:
         payload["task_hours_distance_threshold"] = task_hours_distance_threshold
+    if "hallucination_gate_enabled" in touched:
+        payload["hallucination_gate_enabled"] = hallucination_gate_enabled
+    if "augmentation_enabled" in touched:
+        payload["augmentation_enabled"] = augmentation_enabled
+    if "synthesis_enabled" in touched:
+        payload["synthesis_enabled"] = synthesis_enabled
     return payload
 
 
@@ -281,3 +310,86 @@ def render_comparison_results(response_payload: dict[str, Any], *, top_k: int) -
                         st.caption(f"`{chunk_id}`{badge} — cosine {cosine:.3f}")
                         st.progress(min(max(cosine, 0.0), 1.0))
                         st.text(preview)
+
+
+def _api_headers(estimate_key: str | None) -> dict[str, str]:
+    return {"X-API-Key": estimate_key} if estimate_key else {}
+
+
+def verify_estimate(
+    api_root: str,
+    *,
+    estimate: dict,
+    kept_chunks: list[dict],
+    estimate_key: str | None,
+    use_judge: bool = False,
+    timeout: float = 120.0,
+) -> dict:
+    """POST /v1/estimate/stages/verify — hallucination gate report."""
+    import httpx
+
+    response = httpx.post(
+        f"{api_root.rstrip('/')}/v1/estimate/stages/verify",
+        json={
+            "estimate": estimate,
+            "kept_chunks": kept_chunks,
+            "use_judge": use_judge,
+        },
+        headers=_api_headers(estimate_key),
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def corpus_stats(api_root: str, *, timeout: float = 30.0) -> dict:
+    """GET /embeddings/index/stats."""
+    import httpx
+
+    response = httpx.get(
+        f"{api_root.rstrip('/')}/embeddings/index/stats",
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def corpus_index_run(
+    api_root: str,
+    *,
+    documents: list[dict],
+    document_type: str = "historical_budget",
+    chunk_type: str = "budget_component",
+    timeout: float = 120.0,
+) -> dict:
+    """POST /embeddings/index/runs — start corpus expansion job."""
+    import httpx
+
+    response = httpx.post(
+        f"{api_root.rstrip('/')}/embeddings/index/runs",
+        json={
+            "documents": documents,
+            "document_type": document_type,
+            "chunk_type": chunk_type,
+        },
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def corpus_index_job(
+    api_root: str,
+    job_id: str,
+    *,
+    timeout: float = 30.0,
+) -> dict:
+    """GET /embeddings/index/jobs/{job_id}."""
+    import httpx
+
+    response = httpx.get(
+        f"{api_root.rstrip('/')}/embeddings/index/jobs/{job_id}",
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    return response.json()
