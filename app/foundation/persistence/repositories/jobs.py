@@ -65,6 +65,9 @@ class JobsRepository:
             finished_at=datetime.now(timezone.utc),
         )
 
+    def set_documents_count(self, job_id: uuid.UUID, count: int) -> None:
+        self._update(job_id, documents_count=count)
+
     def _update(self, job_id: uuid.UUID, **fields) -> None:
         row = self._session.get(IngestionJobRow, job_id)
         if row is None:

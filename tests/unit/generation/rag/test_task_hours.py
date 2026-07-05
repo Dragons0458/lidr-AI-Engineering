@@ -79,6 +79,7 @@ def stub_runtime(monkeypatch):
             {
                 "effective_search_mode": lambda self: "hybrid",
                 "effective_rerank": lambda self: True,
+                "effective_synthesis": lambda self: False,
             },
         )(),
     )

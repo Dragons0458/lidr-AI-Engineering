@@ -18,6 +18,7 @@ from streamlit_ui.common import (
     get_api_root_url,
     get_estimate_api_key,
 )
+from streamlit_ui.rag import verify_estimate
 
 st.set_page_config(page_title="RAG Estimación", page_icon="📋", layout="wide")
 
@@ -31,6 +32,7 @@ _DEFAULTS = {
     "rag_structure": None,
     "rag_structure_rows": None,
     "rag_hours": None,
+    "rag_gate_report": None,
     "rag_final_rows": None,
 }
 for key, default in _DEFAULTS.items():
@@ -136,6 +138,7 @@ if st.button("Empezar", type="primary"):
             "rag_structure",
             "rag_structure_rows",
             "rag_hours",
+            "rag_gate_report",
             "rag_final_rows",
         )
         result = _post("/v1/estimate/stages/reformulate", {"transcript": transcript})
@@ -158,7 +161,9 @@ if st.session_state.rag_reformulation:
     st.divider()
     st.subheader("3. Estructura (sin horas)")
     if st.button("Generar estructura"):
-        _clear_downstream("rag_structure_rows", "rag_hours", "rag_final_rows")
+        _clear_downstream(
+            "rag_structure_rows", "rag_hours", "rag_gate_report", "rag_final_rows"
+        )
         result = _post("/v1/estimate/stages/structure", {"query": query})
         if result:
             st.session_state.rag_structure = result
@@ -180,7 +185,7 @@ if st.session_state.rag_structure_rows is not None:
     st.divider()
     st.subheader("4. Horas por tarea")
     if st.button("Estimar horas"):
-        _clear_downstream("rag_hours", "rag_final_rows")
+        _clear_downstream("rag_hours", "rag_gate_report", "rag_final_rows")
         modules = _modules_payload_from_rows(edited_structure)
         if not modules:
             st.error("Añade al menos un módulo con tareas.")
@@ -199,6 +204,16 @@ if st.session_state.rag_hours:
                 "module": item.get("module"),
                 "task": item.get("task"),
                 "estimated_hours": item.get("estimated_hours"),
+                "hours_range": (
+                    f"{item['hours_range']['low']}–{item['hours_range']['high']} h"
+                    if item.get("hours_range")
+                    else ""
+                ),
+                "contradiction_reason": (
+                    item["hours_range"].get("reason", "")
+                    if item.get("hours_range")
+                    else ""
+                ),
                 "reliability": item.get("reliability"),
                 "dispersion": item.get("dispersion"),
                 "has_match": item.get("has_match", True),
@@ -221,6 +236,12 @@ if st.session_state.rag_hours:
             st.warning(
                 f"Sin match histórico: **{item.get('module')} → {item.get('task')}**"
             )
+        if item.get("hours_range"):
+            hr = item["hours_range"]
+            st.info(
+                f"Contradicción · **{item.get('task')}**: "
+                f"{hr.get('low')}–{hr.get('high')} h — {hr.get('reason', '')}"
+            )
         neighbors = item.get("neighbors") or []
         if neighbors:
             with st.expander(f"Vecinos · {item.get('task')}"):
@@ -238,7 +259,53 @@ if st.session_state.rag_hours:
         ]
 
     st.divider()
-    st.subheader("5. Revisión final")
+    st.subheader("5. Hallucination gate (opcional)")
+    if st.button("Verificar líneas (sin juez LLM)"):
+        modules = _modules_payload_from_rows(st.session_state.rag_structure_rows or [])
+        estimate_stub = {
+            "confidence": "high",
+            "reasoning": "wizard review",
+            "modules": [
+                {
+                    "name": m["name"],
+                    "tasks": [
+                        {
+                            "name": t["name"],
+                            "description": t.get("description"),
+                            "engineer_days": None,
+                            "grounded": False,
+                            "sources": [],
+                        }
+                        for t in m.get("tasks", [])
+                    ],
+                }
+                for m in modules
+            ],
+        }
+        try:
+            st.session_state.rag_gate_report = verify_estimate(
+                api_root,
+                estimate=estimate_stub,
+                kept_chunks=[],
+                estimate_key=estimate_key,
+                use_judge=False,
+            )
+        except Exception as exc:  # noqa: BLE001
+            st.error(format_api_error(exc, api_base_url=api_root))
+
+    if st.session_state.rag_gate_report:
+        report = st.session_state.rag_gate_report
+        st.metric("Grounded", report.get("grounded_lines", 0))
+        st.metric("Degraded", report.get("degraded_lines", 0))
+        st.metric("Insufficient", report.get("insufficient_lines", 0))
+        for line in report.get("lines", []):
+            st.caption(
+                f"**{line.get('module')} → {line.get('component')}** · "
+                f"`{line.get('status')}` · {line.get('reason', '')}"
+            )
+
+    st.divider()
+    st.subheader("6. Revisión final")
     final_edited = st.data_editor(
         st.session_state.rag_final_rows,
         num_rows="dynamic",

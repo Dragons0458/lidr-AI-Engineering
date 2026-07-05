@@ -52,6 +52,27 @@ def test_snapshot_shape_covers_every_key(store) -> None:
     assert snapshot["RETRIEVAL_SEARCH_MODE"]["overridden"] is False
 
 
+def test_s11_toggle_defaults(store) -> None:
+    assert store.effective_hallucination_gate() is True
+    assert store.effective_augmentation() is True
+    assert store.effective_synthesis() is True
+
+
+def test_s11_set_bool_overrides(store) -> None:
+    from app.foundation.llm.runtime_config import (
+        AUGMENTATION_KEY,
+        HALLUCINATION_GATE_KEY,
+        SYNTHESIS_KEY,
+    )
+
+    store.set_bool(HALLUCINATION_GATE_KEY, False)
+    store.set_bool(AUGMENTATION_KEY, False)
+    store.set_bool(SYNTHESIS_KEY, False)
+    assert store.effective_hallucination_gate() is False
+    assert store.effective_augmentation() is False
+    assert store.effective_synthesis() is False
+
+
 def test_reads_degrade_when_redis_down() -> None:
     broken = MagicMock()
     broken.hget.side_effect = redis_lib.RedisError("down")

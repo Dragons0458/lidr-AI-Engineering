@@ -1,0 +1,50 @@
+[
+  {
+    "budget_id": "TASK-2023-9001",
+    "client_metadata": {
+      "name": "NotifyLite SaaS",
+      "sector": "ecommerce",
+      "country": "ES"
+    },
+    "project_summary": "Email-only notification service for order updates",
+    "main_technology": "Ruby on Rails",
+    "year": 2023,
+    "total_estimated_hours": 40,
+    "components": [
+      {
+        "component_id": "NOTIF-001",
+        "name": "Real-time notifications delivery service",
+        "description": "Transactional email pipeline for order status events (SMTP relay, templates, bounce handling). Email-only channel.",
+        "module": "Notifications",
+        "tech_stack": ["Rails", "SendGrid"],
+        "estimated_hours": 40,
+        "complexity": "low",
+        "dependencies": []
+      }
+    ]
+  },
+  {
+    "budget_id": "TASK-2024-9002",
+    "client_metadata": {
+      "name": "Regulated Health Alerts",
+      "sector": "healthcare",
+      "country": "DE"
+    },
+    "project_summary": "Multichannel regulated patient alert system with audit trail",
+    "main_technology": "Java Spring",
+    "year": 2024,
+    "total_estimated_hours": 90,
+    "components": [
+      {
+        "component_id": "NOTIF-002",
+        "name": "Real-time notifications delivery service",
+        "description": "HIPAA-compliant multichannel delivery (SMS, push, email) with consent registry, delivery receipts and 7-year audit log.",
+        "module": "Notifications",
+        "tech_stack": ["Spring Boot", "Twilio", "FCM"],
+        "estimated_hours": 90,
+        "complexity": "high",
+        "dependencies": ["Consent management", "Audit store"]
+      }
+    ]
+  }
+]

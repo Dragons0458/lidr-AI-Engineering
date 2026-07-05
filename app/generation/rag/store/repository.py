@@ -13,12 +13,18 @@ table so all Session 8/9 callers are unaffected.
 
 from __future__ import annotations
 
-from sqlalchemy import Integer, Row, cast, func, select
+from sqlalchemy import Integer, Row, cast, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql.elements import ColumnElement
 
 from app.generation.rag.schemas import EmbeddedChunk
-from app.generation.rag.store.models import BudgetChunkRow, DocumentRow, FTS_REGCONFIG
+from app.generation.rag.store.models import (
+    BudgetChunkRow,
+    DocumentRow,
+    FTS_REGCONFIG,
+    TechnicalDocChunkRow,
+    TranscriptChunkRow,
+)
 
 # The structural chunker emits one chunk per budget component; the vocabulary
 # is queryable thanks to the index on ``chunk_type`` (live-session filters).
@@ -207,3 +213,41 @@ class ChunkStore:
             .limit(top_k)
         )
         return list((await session.execute(stmt)).all())
+
+    async def corpus_stats(
+        self, session: AsyncSession
+    ) -> list[tuple[str, int, int, bool]]:
+        """Per-collection document/chunk counts and HNSW index presence."""
+        collections: list[tuple[str, type]] = [
+            ("budget", BudgetChunkRow),
+            ("transcript", TranscriptChunkRow),
+            ("technical_doc", TechnicalDocChunkRow),
+        ]
+        stats: list[tuple[str, int, int, bool]] = []
+        for name, model in collections:
+            chunk_count = int(
+                (
+                    await session.execute(select(func.count()).select_from(model))
+                ).scalar_one()
+            )
+            doc_count = int(
+                (
+                    await session.execute(
+                        select(func.count(func.distinct(model.document_id)))
+                    )
+                ).scalar_one()
+            )
+            index_name = f"ix_{model.__tablename__}_embedding_hnsw"
+            hnsw_exists = bool(
+                (
+                    await session.execute(
+                        text(
+                            "SELECT EXISTS (SELECT 1 FROM pg_indexes "
+                            "WHERE indexname = :index_name)"
+                        ),
+                        {"index_name": index_name},
+                    )
+                ).scalar_one()
+            )
+            stats.append((name, doc_count, chunk_count, hnsw_exists))
+        return stats

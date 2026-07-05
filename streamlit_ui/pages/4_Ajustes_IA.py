@@ -138,6 +138,9 @@ else:
         ("routing_enabled", "RETRIEVAL_ROUTING_ENABLED"),
         ("query_transform_enabled", "QUERY_TRANSFORM_ENABLED"),
         ("temporal_decay_enabled", "TEMPORAL_DECAY_ENABLED"),
+        ("hallucination_gate_enabled", "HALLUCINATION_GATE_ENABLED"),
+        ("augmentation_enabled", "AUGMENTATION_ENABLED"),
+        ("synthesis_enabled", "SYNTHESIS_ENABLED"),
     ]
     bool_values: dict[str, bool | None] = {}
     for field, redis_key in bool_fields:
@@ -214,6 +217,9 @@ else:
             temporal_decay_enabled=bool_values["temporal_decay_enabled"],
             task_hours_top_k=int(th_k) if th_k > 0 else None,
             task_hours_distance_threshold=float(th_d) if th_d > 0 else None,
+            hallucination_gate_enabled=bool_values.get("hallucination_gate_enabled"),
+            augmentation_enabled=bool_values.get("augmentation_enabled"),
+            synthesis_enabled=bool_values.get("synthesis_enabled"),
             touched=retrieval_touched
             or set(bool_fields)
             | {"search_mode", "task_hours_top_k", "task_hours_distance_threshold"},
