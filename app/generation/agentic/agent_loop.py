@@ -89,6 +89,17 @@ def _is_summary_capability_error(exc: Exception) -> bool:
     )
 
 
+def _is_reasoning_capability_error(exc: Exception) -> bool:
+    """True when the model rejects the Responses ``reasoning`` parameter entirely."""
+    message = str(exc).lower()
+    if "reasoning" not in message:
+        return False
+    return any(
+        marker in message
+        for marker in ("unsupported", "not supported", "unknown parameter", "invalid")
+    )
+
+
 async def _create_response(
     client: Any, *, summary_enabled: bool, **kwargs: Any
 ) -> tuple[Any, bool]:
@@ -256,7 +267,7 @@ async def run_structure_agent(
 ) -> tuple[AgentStructure, AgentTrace]:
     """Propose structure once, with structured output and no tools."""
     system_prompt, user_prompt = render_agent_structure_prompt(brief, persona)
-    kwargs = {
+    kwargs: dict[str, Any] = {
         "model": model,
         "instructions": system_prompt,
         "input": [{"role": "user", "content": user_prompt}],
@@ -267,11 +278,23 @@ async def run_structure_agent(
     try:
         response = await client.responses.parse(**kwargs)
     except Exception as exc:
-        if not _is_summary_capability_error(exc):
+        if _is_summary_capability_error(exc):
+            log.warning("agent_reasoning_summary_degraded")
+            kwargs["reasoning"] = {"effort": reasoning_effort}
+            try:
+                response = await client.responses.parse(**kwargs)
+            except Exception as nested:
+                if not _is_reasoning_capability_error(nested):
+                    raise
+                log.warning("agent_reasoning_param_dropped", model=model)
+                kwargs.pop("reasoning", None)
+                response = await client.responses.parse(**kwargs)
+        elif _is_reasoning_capability_error(exc):
+            log.warning("agent_reasoning_param_dropped", model=model)
+            kwargs.pop("reasoning", None)
+            response = await client.responses.parse(**kwargs)
+        else:
             raise
-        log.warning("agent_reasoning_summary_degraded")
-        kwargs["reasoning"] = {"effort": reasoning_effort}
-        response = await client.responses.parse(**kwargs)
     structure = response.output_parsed
     if structure is None:
         raise RuntimeError("Structure response did not contain parsed output.")
