@@ -137,6 +137,10 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   Streamlit (toggles S11 en Ajustes, `hours_range` + gate en RAG Estimación,
   panel Corpus Index). Pre-sesión ya en `main`: `SourceReference`/`grounded`,
   `verify_citations`, `evals/golden_generation.json`, `scripts/eval_ragas_s11.py`.
+- **Sesión 12**: agente de estimación **a mano** (sin framework) sobre la Responses API
+  de OpenAI: bucle manual reason→act→observe con tres tools (`search_budgets` envuelve
+  `retrieve()`, `calculate_estimate` determinista, `validate_estimate` opcional), traza
+  `STEP N` y script entregable `scripts/run_agent_s12.py` (`--stub` para depurar sin BD).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
@@ -199,7 +203,12 @@ app/
     attachments/                 # Extracción PDF/DOCX
   generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
     cag/                         # Caché exact-match + semántico
-    agentic/                     # Actor-Critic-Boss
+    agentic/                     # Actor-Critic-Boss + Session 12 hand-written agent
+      agent_schemas.py           # Tool args, trace (AgentStep/AgentTrace), AgentEstimate
+      agent_tools.py             # Flat Responses schemas + search/calculate/validate
+      agent_loop.py              # run_estimation_agent (raw Responses API — no LLMWrapper)
+      boss.py                    # Actor-Critic-Boss orchestration
+      critic.py
     conversation/                # Sesiones, compresión, tier resolver
     rag/                         # Chunking + embeddings + comparación (S07)
       chunking/strategies/       # 7 estrategias + structural
@@ -369,6 +378,12 @@ SYNTHESIS_CONTRADICTION_THRESHOLD=0.35
 HALLUCINATION_GATE_ENABLED=true
 HALLUCINATION_JUDGE_MODEL=gpt-5-mini
 HALLUCINATION_NUMERIC_TOLERANCE=0.5
+# Session 12 — hand-written estimation agent (Responses API)
+AGENT_MODEL=gpt-5
+AGENT_REASONING_EFFORT=medium
+AGENT_MAX_ITERATIONS=10
+AGENT_SEARCH_TOP_K=5
+AGENT_SEARCH_DISTANCE_THRESHOLD=0.6
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -876,6 +891,65 @@ Citación verificable: cada `TaskItem` en la ruta grounded expone `grounded` +
 `CitationReport` (grounded / dangling / insufficient) logueado por `request_id`. Informe
 de ejemplo en
 [`evals/citation-verification-report.md`](evals/citation-verification-report.md).
+
+## Sesión 12 — agente de estimación a mano (Responses API)
+
+Capa agéntica **por encima** del pipeline RAG (no lo sustituye): el agente descompone
+transcripciones variables en componentes, invoca tools en un bucle manual
+(reason→act→observe) y devuelve una estimación estructurada ligera (`AgentEstimate`) más
+una traza auditable (`AgentTrace.render()` → formato `STEP N`).
+
+**Excepción deliberada:** el bucle usa la **OpenAI Responses API cruda**
+(`client.responses.create` / `.parse`) con `gpt-5`, **no** `LLMWrapper`. Así cada paso
+del bucle (reasoning summaries, function calls, observaciones) queda visible en la traza.
+
+| Tool | Implementación |
+|------|----------------|
+| `search_budgets` | Envuelve `retrieve()` sobre `Collection.BUDGET`, `chunk_types=["historical_task"]` |
+| `calculate_estimate` | Python puro: mediana de referencias × `(1 + 0.15)`; sin refs → 0 h + `unbudgeted=True` |
+| `validate_estimate` | Guardrails S4-style (rango, suma, total no positivo/enorme) |
+
+Materiales oficiales en `exercises/session-12/`:
+
+- `sample_transcript_simple.txt` — un componente (NeoPagos auth); depurar el bucle barato.
+- `sample_transcript_complex.txt` — cuatro componentes (RUTA logística); criterios de aceptación.
+- `reference_retrieval.py` — stub offline (keyword-matching) para `--stub` sin BD.
+- `calculate_estimate_skeleton.py` — esqueleto de referencia del cost model.
+
+Variables de entorno (`AGENT_*`):
+
+```bash
+AGENT_MODEL=gpt-5
+AGENT_REASONING_EFFORT=medium
+AGENT_MAX_ITERATIONS=10
+AGENT_SEARCH_TOP_K=5
+AGENT_SEARCH_DISTANCE_THRESHOLD=0.6
+```
+
+Script entregable:
+
+```bash
+# Depurar el bucle sin BD (stub offline + gpt-5-mini)
+uv run python scripts/run_agent_s12.py \
+  exercises/session-12/sample_transcript_simple.txt --model gpt-5-mini --stub
+
+# Corrida real (stack + corpus historical_task ingestado)
+docker compose exec api python scripts/build_task_corpus.py --ingest
+docker compose exec api python scripts/run_agent_s12.py \
+  exercises/session-12/sample_transcript_complex.txt --model gpt-5 --effort medium \
+  --out exercises/session-12/example_trace_complex.txt
+```
+
+Tests unitarios (sin red ni API key):
+
+```bash
+uv run pytest tests/unit/generation/agentic/ tests/unit/test_async_openai_client.py -v
+```
+
+Criterios de aceptación sobre la transcripción compleja: >1 componente, >1 llamada a
+`search_budgets`, invocación de `calculate_estimate`, parada natural (o `max_iterations`
+con `stopped_reason` explícito), estimación estructurada coherente y traza con
+razonamiento + acción + observación por paso.
 
 ### FTS manual (smoke test)
 
