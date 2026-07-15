@@ -40,7 +40,7 @@ dependencies = [
     "presidio-anonymizer>=2.2",
     "spacy>=3.7",
     "faker>=24.0",
-  # Session 7 live — chunking strategies
+    # Session 7 live — chunking strategies
     "langchain-text-splitters>=0.3.0",
     "langchain-experimental>=0.3.0",
     "langchain-openai>=0.2.0",
@@ -54,6 +54,9 @@ dependencies = [
     "slowapi>=0.1.9",
     # Session 10 — cross-encoder reranking (local inference)
     "sentence-transformers>=3.0",
+    "langgraph>=1.2.2",
+    "langgraph-checkpoint-postgres>=3.1.0",
+    "logfire[asyncpg,fastapi,httpx]>=4.37.0",
 ]
 
 [dependency-groups]
@@ -79,4 +82,5 @@ asyncio_mode = "auto"
 markers = [
     "eval: LLM evaluation tests that may require external model access",
     "slow: slower tests that are not intended for the tight feedback loop",
+    "integration: tests that need local Postgres or other infrastructure",
 ]
