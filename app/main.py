@@ -16,6 +16,7 @@ from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.api.routers.corpus_index import router as corpus_index_router
 from app.api.routers.estimate import router as estimate_router
 from app.api.routers.estimate_agent import router as estimate_agent_router
+from app.api.routers.estimate_graph import router as estimate_graph_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.retrieval import router as retrieval_router
@@ -23,6 +24,16 @@ from app.api.routers.retrieval_advanced import router as retrieval_advanced_rout
 from app.api.search import router as search_router
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
+from app.foundation.observability.logfire_setup import (
+    configure_logfire,
+    instrument_asyncpg,
+    instrument_fastapi_app,
+    instrument_http_clients,
+)
+from app.foundation.persistence.langgraph import (
+    close_langgraph_runtime,
+    open_langgraph_runtime,
+)
 
 
 def configure_logging(env: str, log_level: str) -> None:
@@ -57,6 +68,8 @@ async def lifespan(app: FastAPI):
     settings = get_settings()
     configure_logging(settings.APP_ENV, settings.LOG_LEVEL)
     log = structlog.get_logger()
+    instrument_http_clients()
+    instrument_asyncpg()
     try:
         from app.dependencies import get_catalog
 
@@ -69,9 +82,50 @@ async def lifespan(app: FastAPI):
         )
     except Exception as exc:
         log.error("catalog_load_failed", error=str(exc)[:400])
+
+    app.state.graph_runtime = None
+    if settings.LANGGRAPH_ENABLED:
+        try:
+            from app.dependencies import (
+                get_async_openai_client,
+                get_runtime_retrieval_config,
+            )
+            from app.domain.graph_estimation import (
+                build_default_graph_deps,
+                compile_estimation_graph,
+            )
+
+            runtime_retrieval = get_runtime_retrieval_config()
+            deps = build_default_graph_deps(
+                client=get_async_openai_client(),
+                model=settings.AGENT_MODEL,
+                reasoning_effort=settings.AGENT_REASONING_EFFORT,
+                top_k=settings.AGENT_SEARCH_TOP_K,
+                distance_threshold=settings.AGENT_SEARCH_DISTANCE_THRESHOLD,
+                search_mode=runtime_retrieval.effective_search_mode(),
+                rerank=runtime_retrieval.effective_rerank(),
+            )
+            app.state.graph_runtime = await open_langgraph_runtime(
+                settings.DATABASE_URL,
+                build_graph=lambda checkpointer: compile_estimation_graph(
+                    deps, checkpointer=checkpointer
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001
+            app.state.graph_runtime = None
+            log.error(
+                "langgraph_runtime_startup_failed",
+                error=str(exc)[:400],
+                error_type=type(exc).__name__,
+            )
+
     log.info("application_started", environment=settings.APP_ENV)
-    yield
-    log.info("application_shutdown")
+    try:
+        yield
+    finally:
+        await close_langgraph_runtime(getattr(app.state, "graph_runtime", None))
+        app.state.graph_runtime = None
+        log.info("application_shutdown")
 
 
 settings = get_settings()
@@ -99,6 +153,7 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /v1/estimate/tasks/hours → Per-task hours from historical corpus (S10)
 - POST /v1/estimate/agent/structure → Estructura agéntica sin horas (S12)
 - POST /v1/estimate/agent/hours → Horas deterministas + recovery agéntico (S12)
+- POST /v1/estimate/agent/graph → Estimación LangGraph secuencial (S13)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /api/v1/config/retrieval → Configuración runtime de recuperación (S10)
 - GET /health → Estado del servicio
@@ -108,6 +163,13 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
     version="1.0.0",
     lifespan=lifespan,
 )
+
+configure_logfire(
+    token=settings.LOGFIRE_TOKEN,
+    service_name=settings.LOGFIRE_SERVICE_NAME,
+    environment=settings.APP_ENV,
+)
+instrument_fastapi_app(app)
 
 app.add_middleware(
     CORSMiddleware,
@@ -146,6 +208,7 @@ app.include_router(estimate_router)
 app.include_router(estimate_stages_router)
 app.include_router(estimate_tasks_router)
 app.include_router(estimate_agent_router)
+app.include_router(estimate_graph_router)
 app.include_router(corpus_index_router)
 
 
