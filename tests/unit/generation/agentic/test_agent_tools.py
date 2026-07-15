@@ -8,7 +8,12 @@ from pydantic import ValidationError
 from app.generation.agentic.agent_schemas import SearchBudgetsArgs
 from app.generation.agentic.agent_tools import (
     CONTINGENCY_FACTOR,
+    DERIVE_TASK_HOURS_TOOL,
+    adapt_legacy_backend,
+    adapt_recovery_backend,
     calculate_estimate,
+    derive_task_hours,
+    dispatch_recovery_tool,
     dispatch_tool,
     search_budgets,
     validate_estimate,
@@ -137,3 +142,122 @@ async def test_dispatch_unknown_tool_raises():
 
     with pytest.raises(ValueError, match="Unknown tool"):
         await dispatch_tool("nonexistent", {}, backend=fake_backend)
+
+
+def test_derive_task_hours_schema_is_strict_at_every_object_level():
+    assert DERIVE_TASK_HOURS_TOOL["strict"] is True
+    parameters = DERIVE_TASK_HOURS_TOOL["parameters"]
+    assert parameters["additionalProperties"] is False
+    assert (
+        parameters["properties"]["neighbors"]["items"]["additionalProperties"] is False
+    )
+    assert set(parameters["required"]) == {"task_ref", "module", "task", "neighbors"}
+
+
+def test_derive_task_hours_uses_injected_consensus_and_preserves_provenance():
+    captured = {}
+
+    def consensus(neighbors):
+        captured["neighbors"] = neighbors
+        return 45, 0.88, 0.12
+
+    result = derive_task_hours(
+        {
+            "task_ref": "task-0",
+            "module": "Core",
+            "task": "Build",
+            "neighbors": [
+                {
+                    "source_id": 7,
+                    "budget_id": "BUD-7",
+                    "estimated_hours": 40,
+                    "distance": 0.08,
+                }
+            ],
+        },
+        consensus=consensus,
+    )
+    assert captured["neighbors"] == [(40, 0.08)]
+    assert result["estimated_hours"] == 45
+    assert result["reliability"] == 0.88
+    assert result["dispersion"] == 0.12
+    assert result["neighbors"][0] == {
+        "source_id": 7,
+        "budget_id": "BUD-7",
+        "estimated_hours": 40,
+        "distance": 0.08,
+    }
+
+
+def test_derive_task_hours_empty_neighbors_does_not_call_consensus():
+    def consensus(_neighbors):
+        raise AssertionError("consensus must not run")
+
+    result = derive_task_hours(
+        {
+            "task_ref": "task-0",
+            "module": "Core",
+            "task": "Build",
+            "neighbors": [],
+        },
+        consensus=consensus,
+    )
+    assert result["has_match"] is False
+    assert result["estimated_hours"] is None
+
+
+async def test_recovery_dispatch_and_unknown_tool():
+    async def backend(query, sectors):
+        assert (query, sectors) == ("auth", ["finance"])
+        return [{"id": 1, "estimated_hours": 20}]
+
+    result = await dispatch_recovery_tool(
+        "search_budgets",
+        {"query": "auth", "sectors": ["finance"]},
+        backend=backend,
+        consensus=lambda values: (20, 1.0, 0.0),
+    )
+    assert result["count"] == 1
+    with pytest.raises(ValueError, match="Unknown recovery tool"):
+        await dispatch_recovery_tool(
+            "unknown",
+            {},
+            backend=backend,
+            consensus=lambda values: (20, 1.0, 0.0),
+        )
+
+
+async def test_legacy_and_recovery_backend_adapters_keep_signatures_separate():
+    async def recovery(query, sectors):
+        return [{"query": query, "sectors": sectors}]
+
+    legacy = adapt_recovery_backend(recovery)
+    result = await legacy(
+        SearchBudgetsArgs(
+            query="payments",
+            filters={"sectors": ["finance"], "component_type": None},
+        )
+    )
+    assert result == [{"query": "payments", "sectors": ["finance"]}]
+
+    async def legacy_backend(args):
+        assert isinstance(args, SearchBudgetsArgs)
+        return [{"query": args.query}]
+
+    recovery_adapter = adapt_legacy_backend(legacy_backend)
+    assert await recovery_adapter("mobile", None) == [{"query": "mobile"}]
+
+
+async def test_dispatch_tool_keeps_legacy_backend_signature():
+    seen = {}
+
+    async def legacy_backend(args):
+        seen["args"] = args
+        return []
+
+    await dispatch_tool(
+        "search_budgets",
+        {"query": "auth", "filters": None},
+        backend=legacy_backend,
+    )
+    assert isinstance(seen["args"], SearchBudgetsArgs)

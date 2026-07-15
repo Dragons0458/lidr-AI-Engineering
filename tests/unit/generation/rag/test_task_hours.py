@@ -51,6 +51,14 @@ def test_consensus_high_dispersion_lowers_reliability():
     assert spread < tight
 
 
+def test_public_consensus_and_compatibility_alias_are_identical_and_pinned():
+    neighbors = [(40, 0.1), (60, 0.2)]
+    expected = (47, 0.693, 0.2)
+    assert th.distance_weighted_consensus(neighbors) == expected
+    assert th._consensus(neighbors) == expected
+    assert th._consensus is th.distance_weighted_consensus
+
+
 # --- estimate_one: match and no-match --------------------------------------
 
 

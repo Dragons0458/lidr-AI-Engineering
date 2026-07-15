@@ -101,7 +101,8 @@ class Settings(BaseSettings):
     AGENT_REASONING_EFFORT: Literal["minimal", "low", "medium", "high"] = "medium"
     AGENT_MAX_ITERATIONS: int = 10
     AGENT_SEARCH_TOP_K: int = 5
-    AGENT_SEARCH_DISTANCE_THRESHOLD: float = 0.6
+    AGENT_SEARCH_DISTANCE_THRESHOLD: float = 0.45
+    AGENT_RECOVERY_RELIABILITY_THRESHOLD: float = Field(default=0.35, ge=0, le=1)
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

@@ -35,3 +35,15 @@ def test_session6_defaults() -> None:
     assert settings.INGESTION_DATA_ROOT == Path("data/seed")
     assert settings.PRESIDIO_SPACY_MODEL == "es_core_news_md"
     assert settings.PSEUDONYM_HASH_SALT == "change-me-in-prod"
+
+
+def test_session12_agent_recovery_defaults(monkeypatch) -> None:
+    monkeypatch.delenv("AGENT_SEARCH_DISTANCE_THRESHOLD", raising=False)
+    monkeypatch.delenv("AGENT_RECOVERY_RELIABILITY_THRESHOLD", raising=False)
+    settings = Settings(
+        _env_file=None,
+        OPENAI_API_KEY="test",
+        LLM_PROVIDER="openai",
+    )
+    assert settings.AGENT_SEARCH_DISTANCE_THRESHOLD == 0.45
+    assert settings.AGENT_RECOVERY_RELIABILITY_THRESHOLD == 0.35

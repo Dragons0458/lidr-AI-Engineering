@@ -79,7 +79,7 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Ajustes IA):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Histórico RAG + Ajustes IA):
 
 ```bash
 uv run streamlit run streamlit_ui/home.py
@@ -137,15 +137,18 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   Streamlit (toggles S11 en Ajustes, `hours_range` + gate en RAG Estimación,
   panel Corpus Index). Pre-sesión ya en `main`: `SourceReference`/`grounded`,
   `verify_citations`, `evals/golden_generation.json`, `scripts/eval_ragas_s11.py`.
-- **Sesión 12**: agente de estimación **a mano** (sin framework) sobre la Responses API
-  de OpenAI: bucle manual reason→act→observe con tres tools (`search_budgets` envuelve
-  `retrieve()`, `calculate_estimate` determinista, `validate_estimate` opcional), traza
-  `STEP N` y script entregable `scripts/run_agent_s12.py` (`--stub` para depurar sin BD).
+- **Sesión 12**: flujo híbrido de estimación agéntica (modo principal) más el agente
+  one-shot legacy. Propuesta de estructura sin tools → gate humano → horas
+  deterministas (`estimate_all`) → recovery agéntico solo en tareas marcadas
+  (`derive_task_hours` + consenso ponderado). Endpoints
+  `POST /v1/estimate/agent/structure` y `/hours`, perfiles/avatares/runs en SQLite
+  Streamlit, CLI `--workflow hybrid|recovery-demo|legacy`.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
-- **Frontend Streamlit multipage** (Sesión 7): Home, estimación transaccional, conversación
-  multi-turno, RAG Chunking Lab y Ajustes IA; persistencia local SQLite
-  (`estimations`, `chat_sessions`, `chunking_comparisons`) espejo de `estimator-web`.
+- **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
+  RAG Estimación (wizard S12), Agentes, Histórico RAG, Corpus Index y Ajustes IA;
+  persistencia SQLite (`estimations`, `chat_sessions`, `chunking_comparisons`,
+  `agent_profiles`, `rag_estimation_runs`).
 - Pruebas de renderizado de prompts con `pytest`.
 
 ## Stack tecnológico
@@ -203,7 +206,7 @@ app/
     attachments/                 # Extracción PDF/DOCX
   generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
     cag/                         # Caché exact-match + semántico
-    agentic/                     # Actor-Critic-Boss + Session 12 hand-written agent
+    agentic/                     # Actor-Critic-Boss + Session 12 hybrid/legacy agent
       agent_schemas.py           # Tool args, trace (AgentStep/AgentTrace), AgentEstimate
       agent_tools.py             # Flat Responses schemas + search/calculate/validate
       agent_loop.py              # run_estimation_agent (raw Responses API — no LLMWrapper)
@@ -378,12 +381,16 @@ SYNTHESIS_CONTRADICTION_THRESHOLD=0.35
 HALLUCINATION_GATE_ENABLED=true
 HALLUCINATION_JUDGE_MODEL=gpt-5-mini
 HALLUCINATION_NUMERIC_TOLERANCE=0.5
-# Session 12 — hand-written estimation agent (Responses API)
+# Session 12 — hybrid estimation agent (Responses API)
 AGENT_MODEL=gpt-5
 AGENT_REASONING_EFFORT=medium
 AGENT_MAX_ITERATIONS=10
 AGENT_SEARCH_TOP_K=5
-AGENT_SEARCH_DISTANCE_THRESHOLD=0.6
+AGENT_SEARCH_DISTANCE_THRESHOLD=0.45
+AGENT_RECOVERY_RELIABILITY_THRESHOLD=0.35
+# Streamlit-only (not loaded by FastAPI Settings)
+STREAMLIT_DEFAULT_HOURLY_RATE_EUR=75
+STREAMLIT_AGENT_AVATAR_MAX_BYTES=2097152
 ```
 
 El caché semántico requiere **Redis Stack** (módulo RediSearch) y `OPENAI_API_KEY` para
@@ -892,64 +899,87 @@ Citación verificable: cada `TaskItem` en la ruta grounded expone `grounded` +
 de ejemplo en
 [`evals/citation-verification-report.md`](evals/citation-verification-report.md).
 
-## Sesión 12 — agente de estimación a mano (Responses API)
+## Sesión 12 — flujo híbrido de agentes (Responses API)
 
-Capa agéntica **por encima** del pipeline RAG (no lo sustituye): el agente descompone
-transcripciones variables en componentes, invoca tools en un bucle manual
-(reason→act→observe) y devuelve una estimación estructurada ligera (`AgentEstimate`) más
-una traza auditable (`AgentTrace.render()` → formato `STEP N`).
+Modo principal: **híbrido** (estructura agéntica → gate humano → horas deterministas →
+recovery solo en tareas marcadas). El agente one-shot de la pre-sesión permanece como
+**legacy**. Un único agente manual con dos roles; sin multiagente ni frameworks.
 
-**Excepción deliberada:** el bucle usa la **OpenAI Responses API cruda**
-(`client.responses.create` / `.parse`) con `gpt-5`, **no** `LLMWrapper`. Así cada paso
-del bucle (reasoning summaries, function calls, observaciones) queda visible en la traza.
+**Excepción deliberada:** los bucles usan la **OpenAI Responses API cruda**
+(`client.responses.create` / `.parse`) con `gpt-5`, **no** `LLMWrapper`.
 
-| Tool | Implementación |
-|------|----------------|
-| `search_budgets` | Envuelve `retrieve()` sobre `Collection.BUDGET`, `chunk_types=["historical_task"]` |
-| `calculate_estimate` | Python puro: mediana de referencias × `(1 + 0.15)`; sin refs → 0 h + `unbudgeted=True` |
-| `validate_estimate` | Guardrails S4-style (rango, suma, total no positivo/enorme) |
+### Flujo híbrido
 
-Materiales oficiales en `exercises/session-12/`:
+1. `POST /v1/estimate/agent/structure` — una salida estructurada (`AgentStructure`),
+   sin tools ni horas; `GenerateResult` compatible con el wizard (`engineer_days=null`,
+   `grounded=false`, `agent_trace` con paso `propose_structure`).
+2. Revisión humana de módulos/tareas (UI).
+3. `POST /v1/estimate/agent/hours` — `estimate_all` sobre todas las tareas; marca recovery
+   si `has_match=false`, hay `hours_range`, o `reliability < 0.35`.
+4. Si hay flags: bucle con `search_budgets` + `derive_task_hours` (consenso
+   `distance_weighted_consensus`) + `validate_estimate`. Sin flags: cero llamadas OpenAI.
+5. Revisión final y confirmación persistente en SQLite (Streamlit).
 
-- `sample_transcript_simple.txt` — un componente (NeoPagos auth); depurar el bucle barato.
-- `sample_transcript_complex.txt` — cuatro componentes (RUTA logística); criterios de aceptación.
-- `reference_retrieval.py` — stub offline (keyword-matching) para `--stub` sin BD.
-- `calculate_estimate_skeleton.py` — esqueleto de referencia del cost model.
+Los endpoints deterministas (`/stages/structure`, `/tasks/hours`, `/from-transcript`)
+siguen operativos para comparación.
 
-Variables de entorno (`AGENT_*`):
+| Tool (recovery / legacy) | Implementación |
+|--------------------------|----------------|
+| `search_budgets` | Envuelve `retrieve()` sobre `Collection.BUDGET`, `historical_task` |
+| `derive_task_hours` | Consenso ponderado por distancia (solo flujo híbrido) |
+| `calculate_estimate` | Legacy: mediana × `(1 + 0.15)` |
+| `validate_estimate` | Guardrails S4-style |
+
+Conductor: `app/domain/agent_estimation.py`. Traza compartida:
+`app/domain/schemas/agent_trace.py`. Prompts versionados en
+`app/foundation/prompts/agentic/{structure,hours_recovery,legacy}/v1/`.
+
+Defaults efectivos: modelo `gpt-5`, effort `medium`, 10 iteraciones, top-k `5`,
+distancia `0.45`, umbral recovery `< 0.35`, tarifa UI `75 EUR/h`.
+
+Variables de entorno:
 
 ```bash
 AGENT_MODEL=gpt-5
 AGENT_REASONING_EFFORT=medium
 AGENT_MAX_ITERATIONS=10
 AGENT_SEARCH_TOP_K=5
-AGENT_SEARCH_DISTANCE_THRESHOLD=0.6
+AGENT_SEARCH_DISTANCE_THRESHOLD=0.45
+AGENT_RECOVERY_RELIABILITY_THRESHOLD=0.35
+STREAMLIT_DEFAULT_HOURLY_RATE_EUR=75
+STREAMLIT_AGENT_AVATAR_MAX_BYTES=2097152
 ```
 
-Script entregable:
+CLI (`scripts/run_agent_s12.py`):
 
 ```bash
-# Depurar el bucle sin BD (stub offline + gpt-5-mini)
+# Hybrid (default) — mismo conductor que HTTP; no admite --stub
 uv run python scripts/run_agent_s12.py \
-  exercises/session-12/sample_transcript_simple.txt --model gpt-5-mini --stub
+  exercises/session-12/sample_transcript_simple.txt --workflow hybrid
 
-# Corrida real (stack + corpus historical_task ingestado)
-docker compose exec api python scripts/build_task_corpus.py --ingest
-docker compose exec api python scripts/run_agent_s12.py \
-  exercises/session-12/sample_transcript_complex.txt --model gpt-5 --effort medium \
-  --out exercises/session-12/example_trace_complex.txt
+# Recovery-demo (todas las tareas marcadas; --stub ok)
+uv run python scripts/run_agent_s12.py \
+  exercises/session-12/sample_transcript_simple.txt --workflow recovery-demo --stub --model gpt-5-mini
+
+# Legacy one-shot
+uv run python scripts/run_agent_s12.py \
+  exercises/session-12/sample_transcript_simple.txt --workflow legacy --stub --model gpt-5-mini
 ```
 
-Tests unitarios (sin red ni API key):
+Streamlit: perfiles handwritten en **Agentes**, wizard en **RAG Estimación**
+(modo Agéntico/Determinista), histórico restaurable en **Histórico RAG**. FastAPI no
+persiste perfiles, avatares ni runs.
+
+Tests (sin red ni API key):
 
 ```bash
-uv run pytest tests/unit/generation/agentic/ tests/unit/test_async_openai_client.py -v
+uv run pytest tests/unit/api/test_estimate_agent.py \
+  tests/unit/domain/test_agent_estimation.py \
+  tests/unit/generation/agentic/ \
+  tests/unit/test_run_agent_s12.py \
+  tests/unit/test_streamlit_agents.py \
+  tests/integration/streamlit/ -q
 ```
-
-Criterios de aceptación sobre la transcripción compleja: >1 componente, >1 llamada a
-`search_budgets`, invocación de `calculate_estimate`, parada natural (o `max_iterations`
-con `stopped_reason` explícito), estimación estructurada coherente y traza con
-razonamiento + acción + observación por paso.
 
 ### FTS manual (smoke test)
 
@@ -973,11 +1003,14 @@ La app multipage incluye:
 | **Estimación** | `POST /api/v1/estimate` + histórico local |
 | **Conversación** | Sesiones, adjuntos, ACB + histórico de `chat_sessions` |
 | **RAG Lab** | `POST /embeddings/compare` sobre `data/budgets_sample.json` |
-| **RAG Estimación** | Wizard S10 + `hours_range` + gate de alucinaciones (S11) |
+| **RAG Estimación** | Wizard S12 híbrido (agéntico/determinista) + gate humano + recovery |
 | **Corpus Index** | Stats por colección + expansión incremental (`/embeddings/index/*`) |
+| **Agentes** | Perfiles handwritten (persona, knobs, avatar, default) |
+| **Histórico RAG** | Runs persistentes, restauración y snapshots de perfiles |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 
-Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`).
+Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`):
+estimaciones, chats, comparaciones, `agent_profiles` y `rag_estimation_runs`.
 En Docker Compose el volumen `./streamlit_ui` conserva el histórico al recrear el contenedor.
 
 Variables de entorno del frontend:
@@ -985,6 +1018,8 @@ Variables de entorno del frontend:
 - `ESTIMATION_API_BASE_URL` — default `http://localhost:8000/api/v1`
 - `ESTIMATE_API_KEY` / `RETRIEVAL_API_KEY` — claves para endpoints S09 (también en secrets)
 - `STREAMLIT_DB_PATH` — default `streamlit_ui/data/frontend.db`
+- `STREAMLIT_DEFAULT_HOURLY_RATE_EUR` — tarifa inicial del wizard (default `75`)
+- `STREAMLIT_AGENT_AVATAR_MAX_BYTES` — tamaño máximo de avatar (default `2097152`)
 
 También puedes sobrescribir `ESTIMATION_API_BASE_URL` vía `.streamlit/secrets.toml`.
 

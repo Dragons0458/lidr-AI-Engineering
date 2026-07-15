@@ -17,18 +17,14 @@ Three families of models live here:
 
 from __future__ import annotations
 
-import json
-import re
-from typing import Any, Literal
+from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.domain.schemas.agent_trace import AgentStep as AgentStep
+from app.domain.schemas.agent_trace import AgentTrace as AgentTrace
 
 Confidence = Literal["low", "medium", "high"]
-
-# Strip NUL and other control characters a model may occasionally emit inside a
-# malformed unicode escape (e.g. a stray NUL byte in a tool argument), so a
-# model glitch never poisons the readable trace / the committed deliverable.
-_CONTROL_CHARS = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 
 # --------------------------------------------------------------------------- #
@@ -89,50 +85,81 @@ class ValidateEstimateArgs(BaseModel):
 
 
 # --------------------------------------------------------------------------- #
-# Trace models                                                                #
-# --------------------------------------------------------------------------- #
-class AgentStep(BaseModel):
-    """One reason→act→observe step of the loop."""
-
-    step: int = Field(ge=1)
-    reasoning_summary: str | None = Field(
-        default=None,
-        description="Model reasoning summary for this step (Responses API reasoning summary).",
-    )
-    tool: str = Field(description="Name of the invoked tool.")
-    tool_args: dict[str, Any] = Field(
-        description="Arguments the model passed to the tool."
-    )
-    observation: str = Field(description="Human-readable summary of the tool result.")
-
-
-class AgentTrace(BaseModel):
-    """Ordered record of everything the agent did, for auditing and the deliverable."""
-
-    steps: list[AgentStep] = Field(default_factory=list)
-
-    def render(self) -> str:
-        """Render the trace in the ``STEP N`` console format from the statement."""
-        if not self.steps:
-            return "(no tool steps — the agent answered without calling any tool)"
-        blocks: list[str] = []
-        for s in self.steps:
-            reasoning = s.reasoning_summary or "(no reasoning summary emitted)"
-            args = _CONTROL_CHARS.sub(
-                "", json.dumps(s.tool_args, ensure_ascii=False, default=str)
-            )
-            blocks.append(
-                f"STEP {s.step}\n"
-                f"  reasoning:   {reasoning}\n"
-                f"  action:      {s.tool}({args})\n"
-                f"  observation: {s.observation}"
-            )
-        return "\n\n".join(blocks)
-
-
-# --------------------------------------------------------------------------- #
 # Result models                                                               #
 # --------------------------------------------------------------------------- #
+class AgentTaskNode(BaseModel):
+    """One operational task proposed during the structure phase."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+
+
+class AgentModuleNode(BaseModel):
+    """A functional module and its proposed tasks."""
+
+    name: str = Field(min_length=1)
+    description: str | None = None
+    tasks: list[AgentTaskNode] = Field(default_factory=list)
+
+
+class AgentStructure(BaseModel):
+    """Tool-free structure proposal produced by the model."""
+
+    modules: list[AgentModuleNode] = Field(default_factory=list)
+    confidence: Literal["low", "medium", "high", "insufficient"]
+    reasoning: str
+    insufficient_context_explanation: str | None = None
+
+
+class AgentTaskRef(BaseModel):
+    """A flagged task identified by an opaque conductor-owned reference."""
+
+    task_ref: str = Field(min_length=1)
+    module: str = Field(min_length=1)
+    task: str = Field(min_length=1)
+    description: str | None = None
+    reason: str = Field(min_length=1)
+
+
+class AgentRecoveryNeighbor(BaseModel):
+    """Historical provenance used for a recovered task estimate."""
+
+    source_id: int
+    budget_id: str | None = None
+    estimated_hours: int = Field(ge=0)
+    distance: float = Field(ge=0)
+
+
+class AgentTaskDerivation(BaseModel):
+    """A deterministic consensus derivation emitted by the recovery tool."""
+
+    task_ref: str = Field(min_length=1)
+    module: str = Field(min_length=1)
+    task: str = Field(min_length=1)
+    estimated_hours: int | None = Field(default=None, ge=0)
+    reliability: float | None = Field(default=None, ge=0, le=1)
+    dispersion: float | None = Field(default=None, ge=0)
+    has_match: bool
+    neighbors: list[AgentRecoveryNeighbor] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def matched_derivation_has_provenance(self) -> "AgentTaskDerivation":
+        if self.has_match and (self.estimated_hours is None or not self.neighbors):
+            raise ValueError(
+                "has_match=true requires estimated_hours and at least one neighbor"
+            )
+        return self
+
+
+class AgentTaskHoursRun(BaseModel):
+    """Recovery-loop output; hours only originate from captured derivations."""
+
+    derivations: list[AgentTaskDerivation] = Field(default_factory=list)
+    trace: AgentTrace = Field(default_factory=AgentTrace)
+    iterations: int = Field(ge=0)
+    stopped_reason: Literal["completed", "max_iterations"] = "completed"
+
+
 class AgentComponent(BaseModel):
     """One costed component in the final estimate."""
 

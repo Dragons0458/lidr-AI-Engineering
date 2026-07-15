@@ -14,6 +14,8 @@ from streamlit.errors import StreamlitSecretNotFoundError
 
 MIN_DESCRIPTION_CHARS = 10
 DEFAULT_API_BASE_URL = "http://localhost:8000/api/v1"
+DEFAULT_AGENT_MODELS = ("gpt-5", "gpt-5-mini", "gpt-4o", "gpt-4o-mini")
+INHERITED_MODEL_LABEL = "Por defecto del servicio"
 
 _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 load_dotenv(_PROJECT_ROOT / ".env")
@@ -75,6 +77,52 @@ def fetch_effective_primary_model(api_base_url: str) -> str | None:
         return response.json()["models"]["PRIMARY_MODEL"]["effective"]
     except (httpx.HTTPError, KeyError, TypeError):
         return None
+
+
+def _is_openai_model(model: str) -> bool:
+    try:
+        from app.foundation.llm.wrapper import provider_from_model
+
+        return provider_from_model(model) == "openai"
+    except ImportError:
+        name = model.split("/", 1)[-1].lower()
+        return name.startswith(("gpt", "o1", "o3"))
+
+
+@st.cache_data(ttl=30)
+def fetch_available_agent_models(
+    api_base_url: str,
+    saved_model: str | None = None,
+    *,
+    timeout: float = 5.0,
+) -> list[str]:
+    """Return the OpenAI Responses-compatible catalog with a stable fallback."""
+    try:
+        response = httpx.get(
+            f"{api_base_url.rstrip('/')}/config/models",
+            timeout=timeout,
+        )
+        response.raise_for_status()
+        raw_models = response.json().get("available_models") or []
+        models = [
+            str(model)
+            for model in raw_models
+            if isinstance(model, str) and _is_openai_model(model)
+        ]
+        if not models:
+            models = list(DEFAULT_AGENT_MODELS)
+    except (httpx.HTTPError, AttributeError, KeyError, TypeError, ValueError):
+        models = list(DEFAULT_AGENT_MODELS)
+    saved = (saved_model or "").strip()
+    if saved and saved not in models:
+        models.insert(0, saved)
+    return list(dict.fromkeys(models))
+
+
+def agent_model_label(model: str, available_models: list[str]) -> str:
+    if not model:
+        return INHERITED_MODEL_LABEL
+    return model if model in available_models else f"{model} (no disponible)"
 
 
 def parse_error_detail(response: httpx.Response) -> str:

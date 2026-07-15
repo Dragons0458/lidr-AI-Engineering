@@ -23,21 +23,17 @@ the live-session exercise.
 
 from __future__ import annotations
 
-import asyncio
 import statistics
 from typing import Any, Awaitable, Callable
 
 import structlog
 
-from app.config import get_settings
-from app.dependencies import get_embedder
 from app.generation.agentic.agent_schemas import (
+    AgentTaskDerivation,
     CalculateEstimateArgs,
     SearchBudgetsArgs,
     ValidateEstimateArgs,
 )
-from app.generation.rag.retrieval.collections import Collection
-from app.generation.rag.retrieval.pipeline import retrieve
 
 log = structlog.get_logger()
 
@@ -189,6 +185,70 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
     VALIDATE_ESTIMATE_TOOL,
 ]
 
+RECOVERY_SEARCH_BUDGETS_TOOL: dict[str, Any] = {
+    "type": "function",
+    "name": "search_budgets",
+    "description": "Search historical tasks using one focused query.",
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "query": {"type": "string"},
+            "sectors": {
+                "type": ["array", "null"],
+                "items": {"type": "string"},
+            },
+        },
+        "required": ["query", "sectors"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+DERIVE_TASK_HOURS_TOOL: dict[str, Any] = {
+    "type": "function",
+    "name": "derive_task_hours",
+    "description": (
+        "Derive hours for one flagged task from retrieved historical neighbors. "
+        "This is the only tool allowed to produce recovered hours."
+    ),
+    "parameters": {
+        "type": "object",
+        "properties": {
+            "task_ref": {"type": "string"},
+            "module": {"type": "string"},
+            "task": {"type": "string"},
+            "neighbors": {
+                "type": "array",
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "source_id": {"type": "integer"},
+                        "budget_id": {"type": ["string", "null"]},
+                        "estimated_hours": {"type": "integer"},
+                        "distance": {"type": "number"},
+                    },
+                    "required": [
+                        "source_id",
+                        "budget_id",
+                        "estimated_hours",
+                        "distance",
+                    ],
+                    "additionalProperties": False,
+                },
+            },
+        },
+        "required": ["task_ref", "module", "task", "neighbors"],
+        "additionalProperties": False,
+    },
+    "strict": True,
+}
+
+HOURS_TOOL_SCHEMAS: list[dict[str, Any]] = [
+    RECOVERY_SEARCH_BUDGETS_TOOL,
+    DERIVE_TASK_HOURS_TOOL,
+    VALIDATE_ESTIMATE_TOOL,
+]
+
 
 # --------------------------------------------------------------------------- #
 # Retrieval backend (injectable)                                              #
@@ -196,52 +256,29 @@ TOOL_SCHEMAS: list[dict[str, Any]] = [
 # A backend is an async callable that takes the validated search args and returns
 # a list of plain-dict historical items. The default wraps retrieve(); the student
 # stub swaps in a canned one so the loop can be debugged without a database.
-RetrievalBackend = Callable[[SearchBudgetsArgs], Awaitable[list[dict[str, Any]]]]
+LegacyRetrievalBackend = Callable[[SearchBudgetsArgs], Awaitable[list[dict[str, Any]]]]
+RetrievalBackend = LegacyRetrievalBackend
+RecoveryRetrievalBackend = Callable[
+    [str, list[str] | None], Awaitable[list[dict[str, Any]]]
+]
+ConsensusFn = Callable[[list[tuple[int, float]]], tuple[int, float, float]]
 
 
 async def default_retrieval_backend(args: SearchBudgetsArgs) -> list[dict[str, Any]]:
-    """Wrap the real Session 9/10 hybrid retrieval pipeline.
-
-    Embeds the query with the same model used at ingest time, then runs the
-    single-collection ``retrieve()`` over the budget collection, restricted to
-    ``historical_task`` chunks (those carry the recorded engineer-hours the agent
-    needs). Filtering, ranking and reranking all happen inside ``retrieve()`` — this
-    function only adapts the query in and the chunks out.
-    """
-    embedder = get_embedder()
-    if embedder is None:
-        raise RuntimeError("Embedding service is not available (no OPENAI_API_KEY).")
-
-    settings = get_settings()
-    sectors = args.filters.sectors if args.filters else None
-    query_embedding = await asyncio.to_thread(embedder.embed_one, args.query)
-    result = await retrieve(
-        query_embedding=query_embedding,
-        query_text=args.query,
-        collection=Collection.BUDGET,
-        chunk_types=["historical_task"],
-        top_k=settings.AGENT_SEARCH_TOP_K,
-        distance_threshold=settings.AGENT_SEARCH_DISTANCE_THRESHOLD,
-        sectors=sectors,
+    """Adapt the default 5-neighbor, 0.45 recovery backend for legacy calls."""
+    from app.generation.rag.agent_retrieval import (
+        make_default_legacy_recovery_backend,
     )
-    return [
-        {
-            "id": chunk.id,
-            "content_preview": " ".join(chunk.content.split())[:CONTENT_PREVIEW_CHARS],
-            "sector": chunk.sector,
-            "budget_id": chunk.budget_id,
-            "estimated_hours": chunk.estimated_hours,
-            "distance": round(chunk.distance, 4),
-        }
-        for chunk in result.chunks
-    ]
+
+    sectors = args.filters.sectors if args.filters else None
+    return await make_default_legacy_recovery_backend()(args.query, sectors)
 
 
 # --------------------------------------------------------------------------- #
 # Tool implementations                                                        #
 # --------------------------------------------------------------------------- #
 async def search_budgets(
-    raw_args: dict[str, Any], *, backend: RetrievalBackend
+    raw_args: dict[str, Any], *, backend: LegacyRetrievalBackend
 ) -> dict[str, Any]:
     """Retrieve historical budget items for one component."""
     args = SearchBudgetsArgs.model_validate(raw_args)
@@ -256,6 +293,59 @@ async def search_budgets(
     )
     log.info("agent_tool_search_budgets", query=args.query, results=len(items))
     return {"items": items, "count": len(items), "summary": summary}
+
+
+async def recovery_search_budgets(
+    raw_args: dict[str, Any], *, backend: RecoveryRetrievalBackend
+) -> dict[str, Any]:
+    """Adapt the recovery query/sectors contract to its retrieval backend."""
+    query = raw_args.get("query")
+    sectors = raw_args.get("sectors")
+    if not isinstance(query, str) or not query.strip():
+        raise ValueError("query must be a non-empty string")
+    if sectors is not None and (
+        not isinstance(sectors, list)
+        or any(not isinstance(item, str) for item in sectors)
+    ):
+        raise ValueError("sectors must be an array of strings or null")
+    items = await backend(query.strip(), sectors)
+    return {
+        "items": items,
+        "count": len(items),
+        "summary": f"{len(items)} historical task matches",
+    }
+
+
+def derive_task_hours(
+    raw_args: dict[str, Any], *, consensus: ConsensusFn
+) -> dict[str, Any]:
+    """Derive hours exclusively through the injected deterministic consensus."""
+    base = {
+        "task_ref": raw_args.get("task_ref"),
+        "module": raw_args.get("module"),
+        "task": raw_args.get("task"),
+        "neighbors": raw_args.get("neighbors", []),
+        "has_match": False,
+        "estimated_hours": None,
+        "reliability": None,
+        "dispersion": None,
+    }
+    derivation = AgentTaskDerivation.model_validate(base)
+    if not derivation.neighbors:
+        return derivation.model_dump()
+    hours, reliability, dispersion = consensus(
+        [(item.estimated_hours, item.distance) for item in derivation.neighbors]
+    )
+    return AgentTaskDerivation(
+        task_ref=derivation.task_ref,
+        module=derivation.module,
+        task=derivation.task,
+        estimated_hours=hours,
+        reliability=reliability,
+        dispersion=dispersion,
+        has_match=True,
+        neighbors=derivation.neighbors,
+    ).model_dump()
 
 
 def calculate_estimate(raw_args: dict[str, Any]) -> dict[str, Any]:
@@ -359,3 +449,53 @@ async def dispatch_tool(
     if name == "validate_estimate":
         return validate_estimate(raw_args)
     raise ValueError(f"Unknown tool: {name!r}")
+
+
+async def dispatch_recovery_tool(
+    name: str,
+    raw_args: dict[str, Any],
+    *,
+    backend: RecoveryRetrievalBackend,
+    consensus: ConsensusFn,
+) -> dict[str, Any]:
+    """Dispatch a recovery tool without crossing legacy callable signatures."""
+    if name == "search_budgets":
+        return await recovery_search_budgets(raw_args, backend=backend)
+    if name == "derive_task_hours":
+        return derive_task_hours(raw_args, consensus=consensus)
+    if name == "validate_estimate":
+        return validate_estimate(raw_args)
+    raise ValueError(f"Unknown recovery tool: {name!r}")
+
+
+def adapt_recovery_backend(
+    backend: RecoveryRetrievalBackend,
+) -> LegacyRetrievalBackend:
+    """Explicitly adapt a recovery backend for the legacy search contract."""
+
+    async def legacy(args: SearchBudgetsArgs) -> list[dict[str, Any]]:
+        sectors = args.filters.sectors if args.filters else None
+        return await backend(args.query, sectors)
+
+    return legacy
+
+
+def adapt_legacy_backend(
+    backend: LegacyRetrievalBackend,
+) -> RecoveryRetrievalBackend:
+    """Explicitly adapt a legacy backend for recovery query/sectors calls."""
+
+    async def recovery(query: str, sectors: list[str] | None) -> list[dict[str, Any]]:
+        return await backend(
+            SearchBudgetsArgs.model_validate(
+                {
+                    "query": query,
+                    "filters": {
+                        "sectors": sectors,
+                        "component_type": None,
+                    },
+                }
+            )
+        )
+
+    return recovery

@@ -110,6 +110,28 @@ def test_hours_returns_match_and_flagged(client, monkeypatch):
     assert body["tasks"][0]["has_match"] is True
     assert body["tasks"][1]["has_match"] is False
     assert body["tasks"][1]["estimated_hours"] is None
+    assert body["agent_trace"] is None
+
+
+def test_deterministic_hours_never_invokes_agent_recovery(client, monkeypatch):
+    async def fake_estimate_all(modules, **kwargs):
+        return TaskHoursResult(
+            tasks=[
+                TaskHoursEstimate(module="Payments", task="Gateway", has_match=False)
+            ]
+        )
+
+    async def forbidden_recovery(*args, **kwargs):
+        raise AssertionError("deterministic endpoint must not invoke recovery")
+
+    monkeypatch.setattr(tasks, "estimate_all", fake_estimate_all)
+    monkeypatch.setattr(
+        "app.domain.agent_estimation.run_task_hours_recovery_agent",
+        forbidden_recovery,
+    )
+    response = client.post("/v1/estimate/tasks/hours", json=_BODY, headers=_h())
+    assert response.status_code == 200
+    assert response.json()["agent_trace"] is None
 
 
 def test_hours_empty_modules_rejected(client):

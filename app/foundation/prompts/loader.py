@@ -18,6 +18,7 @@ _PROMPTS_DIR = Path(__file__).resolve().parent
 _ESTIMATION_PROMPTS_ROOT = "estimation"
 _PROJECT_METADATA_EXTRACTION_PROMPTS_ROOT = "project_metadata_extraction"
 _REQUIREMENTS_EXTRACTION_PROMPTS_ROOT = "requirements_extraction"
+_AGENTIC_PROMPTS_ROOT = "agentic"
 log = structlog.get_logger()
 
 _jinja_env = Environment(
@@ -76,10 +77,67 @@ def render_estimation_prompt(
         "estimation_prompt_rendered",
         prompt_version=version,
         prompt_hash=rendered_hash,
-        rendered_content=rendered_content,
     )
 
     return system_prompt, user_prompt
+
+
+def _log_agent_prompt(kind: str, version: str, *parts: str) -> None:
+    content = "\n\n".join(parts)
+    log.info(
+        "agent_prompt_rendered",
+        prompt_kind=kind,
+        prompt_version=version,
+        prompt_hash=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+    )
+
+
+def render_agent_structure_prompt(
+    query_brief: object,
+    persona: str | None = None,
+    version: str = "v1",
+) -> tuple[str, str]:
+    """Render the tool-free structure prompt without logging its content."""
+    brief = (
+        query_brief.model_dump_json()
+        if hasattr(query_brief, "model_dump_json")
+        else str(query_brief)
+    )
+    base = f"{_AGENTIC_PROMPTS_ROOT}/structure/{version}"
+    system = _jinja_env.get_template(f"{base}/system.j2").render(persona=persona)
+    user = _jinja_env.get_template(f"{base}/user.j2").render(query_brief=brief)
+    _log_agent_prompt("structure", version, system, user)
+    return system, user
+
+
+def render_agent_hours_recovery_prompt(
+    flagged_tasks: list[object],
+    persona: str | None = None,
+    version: str = "v1",
+) -> tuple[str, str]:
+    """Render the recovery prompt without logging tasks or persona."""
+    base = f"{_AGENTIC_PROMPTS_ROOT}/hours_recovery/{version}"
+    system = _jinja_env.get_template(f"{base}/system.j2").render(persona=persona)
+    user = _jinja_env.get_template(f"{base}/user.j2").render(
+        flagged_tasks=flagged_tasks
+    )
+    _log_agent_prompt("hours_recovery", version, system, user)
+    return system, user
+
+
+def render_agent_legacy_prompts(
+    transcript: str,
+    version: str = "v1",
+) -> tuple[str, str, str]:
+    """Render the legacy system, initial-user, and final-user prompts."""
+    base = f"{_AGENTIC_PROMPTS_ROOT}/legacy/{version}"
+    system = _jinja_env.get_template(f"{base}/system.j2").render()
+    initial = _jinja_env.get_template(f"{base}/initial_user.j2").render(
+        transcript=transcript
+    )
+    final = _jinja_env.get_template(f"{base}/final_user.j2").render()
+    _log_agent_prompt("legacy", version, system, initial, final)
+    return system, initial, final
 
 
 def render_requirements_extraction_prompt(

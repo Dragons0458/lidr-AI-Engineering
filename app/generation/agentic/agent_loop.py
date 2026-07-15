@@ -35,49 +35,29 @@ from app.generation.agentic.agent_schemas import (
     AgentEstimate,
     AgentRunResult,
     AgentStep,
+    AgentStructure,
+    AgentTaskDerivation,
+    AgentTaskHoursRun,
+    AgentTaskRef,
     AgentTrace,
 )
 from app.generation.agentic.agent_tools import (
+    HOURS_TOOL_SCHEMAS,
     TOOL_SCHEMAS,
+    ConsensusFn,
+    RecoveryRetrievalBackend,
     RetrievalBackend,
     default_retrieval_backend,
+    dispatch_recovery_tool,
     dispatch_tool,
+)
+from app.foundation.prompts.loader import (
+    render_agent_hours_recovery_prompt,
+    render_agent_legacy_prompts,
+    render_agent_structure_prompt,
 )
 
 log = structlog.get_logger()
-
-SYSTEM_PROMPT = """\
-You are an estimation agent for a software consultancy. You receive the raw \
-transcript of a discovery meeting and must produce a grounded effort estimate in \
-engineer-hours.
-
-Method — follow it step by step:
-1. Read the transcript and DECOMPOSE the project into its distinct components \
-(for example: a business backend, an ERP integration, a mobile app, an analytics \
-dashboard). Real projects usually have several.
-2. For EACH component, call `search_budgets` with a focused, component-specific \
-query to retrieve how much analogous work has cost historically, in engineer-hours. \
-Do one search per component — do not try to cover the whole project in a single \
-query.
-3. Once you have reference hours for every component, call `calculate_estimate` \
-with all the components and their reference amounts to get a partial-and-total \
-breakdown.
-4. Call `validate_estimate` as the LAST tool step and fix anything it flags \
-(e.g. a component with no historical reference — search again for it).
-5. When you are satisfied, stop calling tools. You will then be asked to return the \
-final structured estimate.
-
-You have exactly these tools: `search_budgets`, `calculate_estimate`, \
-`validate_estimate`. Ground your numbers in what `search_budgets` returns; when you \
-must assume something the transcript did not specify, record it as an assumption.\
-"""
-
-FINAL_INSTRUCTION = (
-    "Return the final structured estimate now, consolidating the components you "
-    "costed. Set total_hours to the sum of the components, list the assumptions you "
-    "made, and choose a confidence level reflecting how well the historical budgets "
-    "matched the requested work."
-)
 
 
 def _extract_reasoning_summary(output: list[Any]) -> str | None:
@@ -101,6 +81,33 @@ def _function_calls(output: list[Any]) -> list[Any]:
     return [item for item in output if getattr(item, "type", None) == "function_call"]
 
 
+def _is_summary_capability_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "summary" in message and any(
+        marker in message
+        for marker in ("unsupported", "not supported", "unknown parameter", "invalid")
+    )
+
+
+async def _create_response(
+    client: Any, *, summary_enabled: bool, **kwargs: Any
+) -> tuple[Any, bool]:
+    reasoning = {"effort": kwargs.pop("reasoning_effort")}
+    if summary_enabled:
+        reasoning["summary"] = "auto"
+    try:
+        response = await client.responses.create(reasoning=reasoning, **kwargs)
+        return response, summary_enabled
+    except Exception as exc:
+        if not summary_enabled or not _is_summary_capability_error(exc):
+            raise
+        log.warning("agent_reasoning_summary_degraded")
+        response = await client.responses.create(
+            reasoning={"effort": reasoning["effort"]}, **kwargs
+        )
+        return response, False
+
+
 async def run_estimation_agent(
     transcript: str,
     *,
@@ -117,17 +124,20 @@ async def run_estimation_agent(
     to the real ``retrieve()`` pipeline; a stub can be injected for offline runs.
     """
     backend = retrieval_backend or default_retrieval_backend
+    system_prompt, initial_user, final_user = render_agent_legacy_prompts(transcript)
     trace = AgentTrace()
     step_no = 0
     stopped_reason: str = "completed"
 
     log.info("agent_run_start", model=model, effort=reasoning_effort)
-    response = await client.responses.create(
+    response, summary_enabled = await _create_response(
+        client,
+        summary_enabled=True,
+        reasoning_effort=reasoning_effort,
         model=model,
-        instructions=SYSTEM_PROMPT,
-        input=[{"role": "user", "content": transcript}],
+        instructions=system_prompt,
+        input=[{"role": "user", "content": initial_user}],
         tools=TOOL_SCHEMAS,
-        reasoning={"effort": reasoning_effort},  # , "summary": "auto"},
         store=True,
     )
     iterations = 1
@@ -190,12 +200,14 @@ async def run_estimation_agent(
                 }
             )
 
-        response = await client.responses.create(
+        response, summary_enabled = await _create_response(
+            client,
+            summary_enabled=summary_enabled,
+            reasoning_effort=reasoning_effort,
             model=model,
             previous_response_id=response.id,
             input=tool_outputs,
             tools=TOOL_SCHEMAS,
-            reasoning={"effort": reasoning_effort},  # , "summary": "auto"},
             store=True,
         )
         iterations += 1
@@ -206,7 +218,7 @@ async def run_estimation_agent(
             parsed = await client.responses.parse(
                 model=model,
                 previous_response_id=response.id,
-                input=[{"role": "user", "content": FINAL_INSTRUCTION}],
+                input=[{"role": "user", "content": final_user}],
                 text_format=AgentEstimate,
                 store=True,
             )
@@ -232,3 +244,163 @@ async def run_estimation_agent(
         iterations=iterations,
         stopped_reason=stopped_reason,  # type: ignore[arg-type]
     )
+
+
+async def run_structure_agent(
+    brief: object,
+    *,
+    client: Any,
+    model: str,
+    reasoning_effort: str,
+    persona: str | None = None,
+) -> tuple[AgentStructure, AgentTrace]:
+    """Propose structure once, with structured output and no tools."""
+    system_prompt, user_prompt = render_agent_structure_prompt(brief, persona)
+    kwargs = {
+        "model": model,
+        "instructions": system_prompt,
+        "input": [{"role": "user", "content": user_prompt}],
+        "text_format": AgentStructure,
+        "reasoning": {"effort": reasoning_effort, "summary": "auto"},
+        "store": True,
+    }
+    try:
+        response = await client.responses.parse(**kwargs)
+    except Exception as exc:
+        if not _is_summary_capability_error(exc):
+            raise
+        log.warning("agent_reasoning_summary_degraded")
+        kwargs["reasoning"] = {"effort": reasoning_effort}
+        response = await client.responses.parse(**kwargs)
+    structure = response.output_parsed
+    if structure is None:
+        raise RuntimeError("Structure response did not contain parsed output.")
+    task_count = sum(len(module.tasks) for module in structure.modules)
+    trace = AgentTrace(
+        steps=[
+            AgentStep(
+                step=1,
+                reasoning_summary=_extract_reasoning_summary(response.output),
+                tool="propose_structure",
+                tool_args={},
+                observation=(
+                    f"proposed {len(structure.modules)} modules and {task_count} tasks"
+                ),
+            )
+        ]
+    )
+    return structure, trace
+
+
+async def run_task_hours_recovery_agent(
+    flagged_tasks: list[AgentTaskRef],
+    *,
+    client: Any,
+    model: str,
+    reasoning_effort: str,
+    max_iterations: int,
+    backend: RecoveryRetrievalBackend,
+    consensus: ConsensusFn,
+    persona: str | None = None,
+) -> AgentTaskHoursRun:
+    """Recover flagged task hours through tools, never terminal free-form numbers."""
+    if not flagged_tasks:
+        return AgentTaskHoursRun(iterations=0)
+
+    system_prompt, user_prompt = render_agent_hours_recovery_prompt(
+        flagged_tasks, persona
+    )
+    trace = AgentTrace()
+    derivations: list[AgentTaskDerivation] = []
+    response, summary_enabled = await _create_response(
+        client,
+        summary_enabled=True,
+        reasoning_effort=reasoning_effort,
+        model=model,
+        instructions=system_prompt,
+        input=[{"role": "user", "content": user_prompt}],
+        tools=HOURS_TOOL_SCHEMAS,
+        store=True,
+    )
+    iterations = 1
+    step_no = 0
+
+    while True:
+        calls = _function_calls(response.output)
+        if not calls:
+            return AgentTaskHoursRun(
+                derivations=derivations,
+                trace=trace,
+                iterations=iterations,
+                stopped_reason="completed",
+            )
+        if iterations >= max_iterations:
+            return AgentTaskHoursRun(
+                derivations=derivations,
+                trace=trace,
+                iterations=iterations,
+                stopped_reason="max_iterations",
+            )
+
+        reasoning_summary = _extract_reasoning_summary(response.output)
+        first_step = step_no + 1
+        outputs: list[dict[str, Any]] = []
+        for call in calls:
+            step_no += 1
+            name = getattr(call, "name", "unknown")
+            try:
+                raw_args = json.loads(call.arguments)
+            except (json.JSONDecodeError, TypeError) as exc:
+                raw_args = {}
+                result = {"error": f"arguments were not valid JSON: {exc}"}
+            else:
+                try:
+                    result = await dispatch_recovery_tool(
+                        name,
+                        raw_args,
+                        backend=backend,
+                        consensus=consensus,
+                    )
+                    if name == "derive_task_hours":
+                        derivations.append(AgentTaskDerivation.model_validate(result))
+                except Exception as exc:  # noqa: BLE001
+                    log.warning(
+                        "agent_recovery_tool_error",
+                        tool=name,
+                        error_type=type(exc).__name__,
+                    )
+                    result = {"error": f"{type(exc).__name__}: {exc}"}
+            trace.steps.append(
+                AgentStep(
+                    step=step_no,
+                    reasoning_summary=reasoning_summary
+                    if step_no == first_step
+                    else f"(parallel tool call in the same turn as STEP {first_step})",
+                    tool=name,
+                    tool_args=raw_args,
+                    observation=str(
+                        result.get("summary")
+                        or result.get("error")
+                        or f"{name} completed"
+                    )[:200],
+                )
+            )
+            outputs.append(
+                {
+                    "type": "function_call_output",
+                    "call_id": call.call_id,
+                    "output": json.dumps(result),
+                }
+            )
+
+        response, summary_enabled = await _create_response(
+            client,
+            summary_enabled=summary_enabled,
+            reasoning_effort=reasoning_effort,
+            model=model,
+            previous_response_id=response.id,
+            input=outputs,
+            tools=HOURS_TOOL_SCHEMAS,
+            store=True,
+        )
+        iterations += 1

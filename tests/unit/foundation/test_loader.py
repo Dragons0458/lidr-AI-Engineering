@@ -1,8 +1,17 @@
 from app.foundation.prompts.loader import (
+    _jinja_env,
+    render_agent_hours_recovery_prompt,
+    render_agent_legacy_prompts,
+    render_agent_structure_prompt,
     render_estimation_prompt,
     render_project_metadata_extraction_prompt,
     render_structured_estimation_prompt,
 )
+from jinja2 import UndefinedError
+import pytest
+from structlog.testing import capture_logs
+
+from app.generation.agentic.agent_schemas import AgentTaskRef
 from app.domain.schemas.attachments import AttachmentText
 from app.domain.schemas.estimation import (
     DetailLevel,
@@ -254,3 +263,62 @@ def test_structured_v3_follow_up_includes_conversation_context() -> None:
     assert "<conversation_context>" in user_prompt
     assert "<latest_user_message>" in user_prompt
     assert "Angular y NestJS" in user_prompt
+
+
+def test_agent_structure_prompt_separates_brief_and_optional_persona():
+    brief = {"function": "CONFIDENTIAL_BRIEF"}
+    system, user = render_agent_structure_prompt(brief, "PRIVATE_PERSONA")
+    assert "PRIVATE_PERSONA" in system
+    assert "PRIVATE_PERSONA" not in user
+    assert "CONFIDENTIAL_BRIEF" in user
+    assert "CONFIDENTIAL_BRIEF" not in system
+    system_without_persona, _ = render_agent_structure_prompt(brief)
+    assert "Additional working persona" not in system_without_persona
+
+
+def test_hours_recovery_prompt_lists_flags_and_prohibits_free_hours():
+    task = AgentTaskRef(
+        task_ref="task-0",
+        module="Core",
+        task="Build",
+        description="Implementation",
+        reason="no historical match",
+    )
+    system, user = render_agent_hours_recovery_prompt([task], "Careful reviewer")
+    assert "derive_task_hours" in system
+    assert "Never\ninvent or return free-form hours" in system
+    assert "Careful reviewer" in system
+    assert "task-0" in user
+    assert "no historical match" in user
+
+
+def test_legacy_prompts_render_transcript_and_final_instruction():
+    system, initial, final = render_agent_legacy_prompts("SECRET_TRANSCRIPT")
+    assert "search_budgets" in system
+    assert initial.strip() == "SECRET_TRANSCRIPT"
+    assert "total_hours" in final
+
+
+def test_prompt_environment_uses_strict_undefined():
+    with pytest.raises(UndefinedError):
+        _jinja_env.from_string("{{ missing }}").render()
+
+
+def test_agent_prompt_logs_never_include_sensitive_content():
+    transcript = "SENSITIVE_TRANSCRIPT_123"
+    persona = "SENSITIVE_PERSONA_456"
+    task = AgentTaskRef(
+        task_ref="task-secret",
+        module="Secret",
+        task="Hidden",
+        reason="private reason",
+    )
+    with capture_logs() as logs:
+        render_agent_structure_prompt({"function": transcript}, persona)
+        render_agent_hours_recovery_prompt([task], persona)
+        render_agent_legacy_prompts(transcript)
+    serialized = repr(logs)
+    assert transcript not in serialized
+    assert persona not in serialized
+    assert "rendered_content" not in serialized
+    assert all("prompt_hash" in event for event in logs)

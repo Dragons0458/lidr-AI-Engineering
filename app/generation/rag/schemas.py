@@ -11,7 +11,9 @@ import uuid
 from datetime import date, datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from app.domain.schemas.agent_trace import AgentTrace
 
 # Closed universe of client sectors present in the sample dataset. Kept as a
 # Literal so a typo or an unexpected sector fails validation loudly instead of
@@ -482,6 +484,7 @@ class GenerateResult(BaseModel):
     coherent: bool = Field(
         description="False when an insufficient estimate still carries numbers."
     )
+    agent_trace: AgentTrace | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -555,6 +558,7 @@ class TaskHoursEstimate(BaseModel):
         default=None,
         description="Present only when neighbours contradict; point estimate stays consensus.",
     )
+    estimation_source: Literal["deterministic", "agent_recovery"] = "deterministic"
 
 
 class TaskHoursTaskInput(BaseModel):
@@ -581,6 +585,32 @@ class TaskHoursResult(BaseModel):
     """Per-task hours estimates, in the order the tasks were submitted."""
 
     tasks: list[TaskHoursEstimate] = Field(default_factory=list)
+    agent_trace: AgentTrace | None = None
+
+
+class AgentStructureRequest(BaseModel):
+    """Payload for the tool-free agentic structure phase."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    query: EstimationQuery
+    model: str | None = Field(default=None, min_length=1)
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+    persona: str | None = Field(default=None, max_length=2000)
+
+
+class AgentHoursRequest(BaseModel):
+    """Payload for deterministic hours plus selective agent recovery."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    modules: list[TaskHoursModuleInput] = Field(min_length=1)
+    model: str | None = Field(default=None, min_length=1)
+    reasoning_effort: Literal["minimal", "low", "medium", "high"] | None = None
+    max_iterations: int | None = Field(default=None, ge=1, le=20)
+    search_top_k: int | None = Field(default=None, ge=1, le=30)
+    search_distance_threshold: float | None = Field(default=None, ge=0, le=2)
+    persona: str | None = Field(default=None, max_length=2000)
 
 
 # ---------------------------------------------------------------------------

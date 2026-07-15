@@ -15,6 +15,7 @@ from app.api.ingestion import router as ingestion_router
 from app.api.rate_limiting import limiter, rate_limit_exceeded_handler
 from app.api.routers.corpus_index import router as corpus_index_router
 from app.api.routers.estimate import router as estimate_router
+from app.api.routers.estimate_agent import router as estimate_agent_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.retrieval import router as retrieval_router
@@ -96,6 +97,8 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /v1/estimate/from-transcript → Estimación fundamentada (S09)
 - POST /v1/estimate/stages/* → Wizard RAG por etapas (S09/S10)
 - POST /v1/estimate/tasks/hours → Per-task hours from historical corpus (S10)
+- POST /v1/estimate/agent/structure → Estructura agéntica sin horas (S12)
+- POST /v1/estimate/agent/hours → Horas deterministas + recovery agéntico (S12)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /api/v1/config/retrieval → Configuración runtime de recuperación (S10)
 - GET /health → Estado del servicio
@@ -142,6 +145,7 @@ app.include_router(retrieval_advanced_router)
 app.include_router(estimate_router)
 app.include_router(estimate_stages_router)
 app.include_router(estimate_tasks_router)
+app.include_router(estimate_agent_router)
 app.include_router(corpus_index_router)
 
 

@@ -1,0 +1,8 @@
+Flagged tasks:
+{% for item in flagged_tasks %}
+- task_ref: {{ item.task_ref }}
+  module: {{ item.module }}
+  task: {{ item.task }}
+  description: {{ item.description or "" }}
+  reason: {{ item.reason }}
+{% endfor %}

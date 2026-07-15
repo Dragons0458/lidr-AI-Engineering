@@ -60,7 +60,9 @@ def compose_task_search_text(module: str, name: str, description: str | None) ->
     return "\n".join(parts)
 
 
-def _consensus(neighbors: list[tuple[int, float]]) -> tuple[int, float, float]:
+def distance_weighted_consensus(
+    neighbors: list[tuple[int, float]],
+) -> tuple[int, float, float]:
     """Distance-weighted consensus over ``(hours, distance)`` neighbours.
 
     Returns ``(hours, reliability, dispersion)``:
@@ -154,7 +156,7 @@ async def estimate_one(
         )
         for c in usable
     ]
-    hours, reliability, dispersion = _consensus(
+    hours, reliability, dispersion = distance_weighted_consensus(
         [(n.estimated_hours, n.distance) for n in neighbors]
     )
     from app.generation.rag.quality.synthesis import synthesize_range
@@ -232,3 +234,6 @@ async def estimate_all(
         rerank=rerank,
     )
     return TaskHoursResult(tasks=list(estimates))
+
+
+_consensus = distance_weighted_consensus

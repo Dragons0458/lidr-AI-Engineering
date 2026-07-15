@@ -43,8 +43,28 @@ if str(REPO_ROOT) not in sys.path:
 
 from app.config import get_settings  # noqa: E402
 from app.dependencies import get_async_openai_client  # noqa: E402
-from app.generation.agentic.agent_loop import run_estimation_agent  # noqa: E402
-from app.generation.agentic.agent_schemas import AgentRunResult, SearchBudgetsArgs  # noqa: E402
+from app.domain.agent_estimation import (  # noqa: E402
+    agent_estimate_task_hours,
+    agent_propose_structure,
+)
+from app.generation.agentic.agent_loop import (  # noqa: E402
+    run_estimation_agent,
+    run_structure_agent,
+    run_task_hours_recovery_agent,
+)
+from app.generation.agentic.agent_schemas import (  # noqa: E402
+    AgentRunResult,
+    AgentTaskRef,
+    SearchBudgetsArgs,
+)
+from app.generation.rag.agent_retrieval import make_retrieval_backend  # noqa: E402
+from app.generation.rag.prompt_builder import build_structure_user_message  # noqa: E402
+from app.generation.rag.query_reformulator import reformulate_query  # noqa: E402
+from app.generation.rag.schemas import (  # noqa: E402
+    TaskHoursModuleInput,
+    TaskHoursTaskInput,
+)
+from app.generation.rag.task_hours import distance_weighted_consensus  # noqa: E402
 
 STUB_PATH = REPO_ROOT / "exercises" / "session-12" / "reference_retrieval.py"
 
@@ -62,6 +82,20 @@ def _load_stub_backend():
         return module.search_budgets_stub(args.query, filters)
 
     return stub_backend
+
+
+def _load_recovery_stub_backend():
+    """Load the same stub behind the recovery query/sectors signature."""
+    legacy = _load_stub_backend()
+
+    async def recovery(query: str, sectors: list[str] | None) -> list[dict]:
+        raw = {
+            "query": query,
+            "filters": {"sectors": sectors, "component_type": None},
+        }
+        return await legacy(SearchBudgetsArgs.model_validate(raw))
+
+    return recovery
 
 
 def _render(result: AgentRunResult) -> str:
@@ -111,7 +145,6 @@ async def _main_async(args: argparse.Namespace) -> int:
         )
         return 1
 
-    backend = _load_stub_backend() if args.stub else None
     transcript = transcript_path.read_text(encoding="utf-8")
 
     print(f"transcript : {transcript_path}")
@@ -121,16 +154,110 @@ async def _main_async(args: argparse.Namespace) -> int:
     )
     print()
 
-    result = await run_estimation_agent(
-        transcript,
-        client=client,
-        model=args.model,
-        reasoning_effort=args.effort,
-        max_iterations=args.max_iterations,
-        retrieval_backend=backend,
-    )
-
-    rendered = _render(result)
+    if args.workflow == "legacy":
+        result = await run_estimation_agent(
+            transcript,
+            client=client,
+            model=args.model,
+            reasoning_effort=args.effort,
+            max_iterations=args.max_iterations,
+            retrieval_backend=_load_stub_backend() if args.stub else None,
+        )
+        rendered = _render(result)
+    elif args.workflow == "hybrid":
+        query = await reformulate_query(transcript)
+        structure_result = await agent_propose_structure(
+            query,
+            client=client,
+            model=args.model,
+            reasoning_effort=args.effort,
+            persona=args.persona,
+        )
+        modules = [
+            TaskHoursModuleInput(
+                name=module.name,
+                tasks=[
+                    TaskHoursTaskInput(
+                        name=task.name,
+                        description=task.description,
+                    )
+                    for task in module.tasks
+                ],
+            )
+            for module in structure_result.estimate.modules
+        ]
+        settings = get_settings()
+        hours_result = await agent_estimate_task_hours(
+            modules,
+            client=client,
+            model=args.model,
+            reasoning_effort=args.effort,
+            max_iterations=args.max_iterations,
+            top_k=settings.TASK_HOURS_TOP_K,
+            distance_threshold=settings.TASK_HOURS_DISTANCE_THRESHOLD,
+            search_mode=settings.RETRIEVAL_SEARCH_MODE,
+            rerank=settings.RERANKER_ENABLED,
+            persona=args.persona,
+            recovery_reliability_threshold=(
+                settings.AGENT_RECOVERY_RELIABILITY_THRESHOLD
+            ),
+        )
+        rendered = (
+            "STRUCTURE TRACE\n"
+            f"{structure_result.agent_trace.render() if structure_result.agent_trace else '(none)'}\n\n"
+            f"STRUCTURE\n{structure_result.estimate.model_dump_json(indent=2)}\n\n"
+            "HOURS TRACE\n"
+            f"{hours_result.agent_trace.render() if hours_result.agent_trace else '(none)'}\n\n"
+            f"HOURS\n{hours_result.model_dump_json(indent=2)}"
+        )
+    else:
+        query = await reformulate_query(transcript)
+        structure, structure_trace = await run_structure_agent(
+            build_structure_user_message(query),
+            client=client,
+            model=args.model,
+            reasoning_effort=args.effort,
+            persona=args.persona,
+        )
+        flagged = [
+            AgentTaskRef(
+                task_ref=f"task-{index}",
+                module=module.name,
+                task=task.name,
+                description=task.description,
+                reason="recovery demo",
+            )
+            for index, (module, task) in enumerate(
+                (module, task) for module in structure.modules for task in module.tasks
+            )
+        ]
+        settings = get_settings()
+        backend = (
+            _load_recovery_stub_backend()
+            if args.stub
+            else make_retrieval_backend(
+                top_k=settings.AGENT_SEARCH_TOP_K,
+                distance_threshold=settings.AGENT_SEARCH_DISTANCE_THRESHOLD,
+                search_mode=settings.RETRIEVAL_SEARCH_MODE,
+                rerank=settings.RERANKER_ENABLED,
+            )
+        )
+        recovery = await run_task_hours_recovery_agent(
+            flagged,
+            client=client,
+            model=args.model,
+            reasoning_effort=args.effort,
+            max_iterations=args.max_iterations,
+            backend=backend,
+            consensus=distance_weighted_consensus,
+            persona=args.persona,
+        )
+        rendered = (
+            f"STRUCTURE TRACE\n{structure_trace.render()}\n\n"
+            f"STRUCTURE\n{structure.model_dump_json(indent=2)}\n\n"
+            f"RECOVERY TRACE\n{recovery.trace.render()}\n\n"
+            f"DERIVATIONS\n{recovery.model_dump_json(indent=2)}"
+        )
     print(rendered)
 
     if args.out:
@@ -143,6 +270,12 @@ def main() -> int:
     settings = get_settings()
     parser = argparse.ArgumentParser(description="Run the Session 12 estimation agent.")
     parser.add_argument("transcript", help="Path to a meeting transcript .txt file.")
+    parser.add_argument(
+        "--workflow",
+        choices=["hybrid", "recovery-demo", "legacy"],
+        default="hybrid",
+        help="Workflow to run (default: hybrid).",
+    )
     parser.add_argument(
         "--model",
         default=settings.AGENT_MODEL,
@@ -168,7 +301,10 @@ def main() -> int:
     parser.add_argument(
         "--out", help="Write the rendered trace + estimate to this file."
     )
+    parser.add_argument("--persona", help="Optional agent working persona.")
     args = parser.parse_args()
+    if args.stub and args.workflow == "hybrid":
+        parser.error("--stub is not supported with --workflow hybrid")
     return asyncio.run(_main_async(args))
 
 

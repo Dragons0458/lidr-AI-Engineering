@@ -1,6 +1,9 @@
 import httpx
 
 from streamlit_ui.common import (
+    DEFAULT_AGENT_MODELS,
+    agent_model_label,
+    fetch_available_agent_models,
     format_api_error,
     format_guardrail_detail,
     get_api_root_url,
@@ -119,3 +122,70 @@ def test_build_retrieval_update_payload_includes_s11_flags() -> None:
         "augmentation_enabled": True,
         "synthesis_enabled": True,
     }
+
+
+def test_fetch_available_agent_models_uses_api_catalog_and_filters_non_openai(
+    monkeypatch,
+) -> None:
+    class Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {
+                "available_models": [
+                    "gpt-5",
+                    "anthropic/claude-sonnet-4-5",
+                    "claude-3-5-sonnet",
+                    "openai/gpt-4o-mini",
+                    "gemini/gemini-2.5-pro",
+                ]
+            }
+
+    calls = []
+
+    def fake_get(url, *, timeout):
+        calls.append((url, timeout))
+        return Response()
+
+    fetch_available_agent_models.clear()
+    monkeypatch.setattr("streamlit_ui.common.httpx.get", fake_get)
+    models = fetch_available_agent_models("http://api/api/v1", timeout=1.25)
+
+    assert models == ["gpt-5", "openai/gpt-4o-mini"]
+    assert calls == [("http://api/api/v1/config/models", 1.25)]
+
+
+def test_fetch_available_agent_models_falls_back_on_timeout_or_api_error(
+    monkeypatch,
+) -> None:
+    def fail(*args, **kwargs):
+        raise httpx.ReadTimeout("catalog unavailable")
+
+    fetch_available_agent_models.clear()
+    monkeypatch.setattr("streamlit_ui.common.httpx.get", fail)
+    assert fetch_available_agent_models("http://api") == list(DEFAULT_AGENT_MODELS)
+
+
+def test_fetch_available_agent_models_keeps_saved_model_absent_from_catalog(
+    monkeypatch,
+) -> None:
+    class Response:
+        @staticmethod
+        def raise_for_status() -> None:
+            return None
+
+        @staticmethod
+        def json() -> dict:
+            return {"available_models": ["gpt-5"]}
+
+    fetch_available_agent_models.clear()
+    monkeypatch.setattr("streamlit_ui.common.httpx.get", lambda *a, **k: Response())
+    models = fetch_available_agent_models("http://api", saved_model="gpt-retired")
+
+    assert models == ["gpt-retired", "gpt-5"]
+    assert agent_model_label("gpt-retired", ["gpt-5"]) == (
+        "gpt-retired (no disponible)"
+    )

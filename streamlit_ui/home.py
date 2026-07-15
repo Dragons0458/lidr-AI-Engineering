@@ -44,7 +44,10 @@ with col1:
     st.caption("Compara 8 estrategias de chunking sobre el corpus de presupuestos.")
 
     st.page_link("pages/5_RAG_Estimacion.py", label="RAG Estimación", icon="📋")
-    st.caption("Wizard transcript → estimación fundamentada (Sesión 9).")
+    st.caption("Wizard híbrido con agente, recovery y revisión humana (Sesión 12).")
+
+    st.page_link("pages/7_Agentes.py", label="Agentes", icon="🤖")
+    st.caption("Perfiles handwritten, personas, avatares y knobs del agente.")
 
 with col2:
     st.page_link("pages/2_Conversacion.py", label="Conversación", icon="💬")
@@ -53,8 +56,12 @@ with col2:
     st.page_link("pages/4_Ajustes_IA.py", label="Ajustes IA", icon="⚙️")
     st.caption("Overrides runtime de modelos vía `GET/PUT /api/v1/config/models`.")
 
+    st.page_link("pages/8_Historial_RAG.py", label="Histórico RAG", icon="🕘")
+    st.caption("Runs incompletos restaurables y confirmaciones de solo lectura.")
+
 st.divider()
 st.markdown(
-    "**Persistencia local:** SQLite en `streamlit_ui/data/frontend.db` "
-    "(tablas `estimations`, `chat_sessions`, `chunking_comparisons`)."
+    "**Persistencia local:** SQLite en `STREAMLIT_DB_PATH` "
+    "(por defecto `streamlit_ui/data/frontend.db`). Incluye estimaciones, sesiones, "
+    "comparaciones, perfiles, avatares y runs RAG."
 )
