@@ -1,0 +1,129 @@
+{
+  "estimation_id": "s13-acceptance-final",
+  "status_code": 200,
+  "response": {
+    "estimate": {
+      "components": [
+        {
+          "name": "Design Database Schema",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Implement Order Management API",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Implement Route Assignment API",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Implement Shipment Tracking API",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Implement Tariff Calculation API",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Develop SAP Integration Module",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Define User Interface Requirements",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Design Mobile App Architecture",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Develop Offline Data Sync Logic",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Build UI Components",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Test Mobile Application Functionality",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Determine KPI Requirements",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Design Dashboard UI",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Implement Data Visualization Components",
+          "estimated_hours": 51.2,
+          "cited_chunk_ids": [
+            2793,
+            3066
+          ],
+          "rationale": "Median of 2 historical hour(s) plus 15% contingency for Analytics Dashboard Development/Implement Data Visualization Components."
+        },
+        {
+          "name": "Integrate API for Data Fetching",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        },
+        {
+          "name": "Conduct Usability Testing",
+          "estimated_hours": 0.0,
+          "cited_chunk_ids": [],
+          "rationale": "No historical references found; left at 0h pending review."
+        }
+      ],
+      "total_hours": 51.2,
+      "assumptions": [
+        "No historical references for Backend API Development/Design Database Schema; hours set to 0.",
+        "No historical references for Backend API Development/Implement Order Management API; hours set to 0.",
+        "No historical references for Backend API Development/Implement Route Assignment API; hours set to 0.",
+        "No historical references for Backend API Development/Implement Shipment Tracking API; hours set to 0.",
+        "No historical references for Backend API Development/Implement Tariff Calculation API; hours set to 0.",
+        "No historical references for Backend API Development/Develop SAP Integration Module; hours set to 0.",
+        "No historical references for Mobile Application Development/Define User Interface Requirements; hours set to 0.",
+        "No historical references for Mobile Application Development/Design Mobile App Architecture; hours set to 0.",
+        "No historical references for Mobile Application Development/Develop Offline Data Sync Logic; hours set to 0.",
+        "No historical references for Mobile Application Development/Build UI Components; hours set to 0.",
+        "No historical references for Mobile Application Development/Test Mobile Application Functionality; hours set to 0.",
+        "No historical references for Analytics Dashboard Development/Determine KPI Requirements; hours set to 0.",
+        "No historical references for Analytics Dashboard Development/Design Dashboard UI; hours set to 0.",
+        "No historical references for Analytics Dashboard Development/Integrate API for Data Fetching; hours set to 0.",
+        "No historical references for Analytics Dashboard Development/Conduct Usability Testing; hours set to 0."
+      ],
+      "confidence": "low"
+    },
+    "status": "needs_review"
+  }
+}
