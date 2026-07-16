@@ -143,6 +143,11 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   (`derive_task_hours` + consenso ponderado). Endpoints
   `POST /v1/estimate/agent/structure` y `/hours`, perfiles/avatares/runs en SQLite
   Streamlit, CLI `--workflow hybrid|recovery-demo|legacy`.
+- **Sesión 13**: orquestación LangGraph secuencial
+  (`extract_requirements` → `classify_components` → `search_budgets` →
+  `generate_estimate` → `validate_and_consolidate`), estado tipado con reducers,
+  checkpoints en el PostgreSQL existente (`AsyncPostgresSaver`), trazas Logfire
+  (un span por nodo) y endpoint aditivo `POST /v1/estimate/agent/graph`.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
@@ -166,6 +171,8 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - slowapi (rate limiting Session 9)
 - sentence-transformers + PyTorch (cross-encoder reranking Session 10)
 - ragas + datasets + langchain-google-vertexai (evaluación offline Session 11, grupo `dev`)
+- langgraph + langgraph-checkpoint-postgres (orquestación Session 13)
+- logfire[fastapi,httpx] (observabilidad full-stack Session 13)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -203,13 +210,19 @@ app/
     guardrails/                  # Input/output guardrails
     prompts/                     # Plantillas Jinja versionadas
     persistence/                 # SQLAlchemy sync (S06) + async engine (S08)
+      langgraph.py               # AsyncPostgresSaver pool + libpq URL (S13)
+    observability/               # Logfire bootstrap (S13)
     attachments/                 # Extracción PDF/DOCX
   generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
     cag/                         # Caché exact-match + semántico
-    agentic/                     # Actor-Critic-Boss + Session 12 hybrid/legacy agent
+    agentic/                     # Actor-Critic-Boss + S12 hybrid/legacy + S13 LangGraph
       agent_schemas.py           # Tool args, trace (AgentStep/AgentTrace), AgentEstimate
       agent_tools.py             # Flat Responses schemas + search/calculate/validate
       agent_loop.py              # run_estimation_agent (raw Responses API — no LLMWrapper)
+      graph/                     # Session 13 StateGraph (sequential estimation)
+        state.py                 # EstimationState TypedDict + reducers
+        nodes.py                 # Five injectable nodes + Logfire spans
+        build.py                 # StateGraph wiring START→…→END
       boss.py                    # Actor-Critic-Boss orchestration
       critic.py
     conversation/                # Sesiones, compresión, tier resolver
@@ -388,6 +401,10 @@ AGENT_MAX_ITERATIONS=10
 AGENT_SEARCH_TOP_K=5
 AGENT_SEARCH_DISTANCE_THRESHOLD=0.45
 AGENT_RECOVERY_RELIABILITY_THRESHOLD=0.35
+# Session 13 — LangGraph + Logfire (token optional locally)
+LANGGRAPH_ENABLED=true
+LOGFIRE_TOKEN=
+LOGFIRE_SERVICE_NAME=estimador-cag
 # Streamlit-only (not loaded by FastAPI Settings)
 STREAMLIT_DEFAULT_HOURLY_RATE_EUR=75
 STREAMLIT_AGENT_AVATAR_MAX_BYTES=2097152
@@ -428,6 +445,9 @@ Endpoints locales predeterminados:
 - `POST /embeddings/index/runs` (202 — expansión incremental del corpus, S11)
 - `GET /embeddings/index/jobs/{job_id}` / `GET /embeddings/index/stats` (S11)
 - `POST /v1/estimate/tasks/hours` (horas por tarea desde corpus histórico, S10)
+- `POST /v1/estimate/agent/structure` (estructura agéntica sin horas, S12)
+- `POST /v1/estimate/agent/hours` (horas deterministas + recovery, S12)
+- `POST /v1/estimate/agent/graph` (LangGraph secuencial transcript→estimate+status, S13)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 - `GET /api/v1/config/retrieval` / `PUT /api/v1/config/retrieval` (toggles recuperación S10)
@@ -987,6 +1007,78 @@ uv run pytest tests/unit/api/test_estimate_agent.py \
 docker compose exec postgres psql -U estimator -d estimator -c \
   "SELECT id, ts_rank(content_tsv, q) r FROM budget_chunks, websearch_to_tsquery('english','OAuth JWT') q \
    WHERE content_tsv @@ q ORDER BY r DESC LIMIT 5;"
+```
+
+## Sesión 13 — orquestación LangGraph (pre-sesión)
+
+Flujo de estimación reexpresado como un **StateGraph** secuencial de bajo nivel
+(no `create_agent`). Los endpoints S9–S12 permanecen intactos; S13 añade
+`POST /v1/estimate/agent/graph`.
+
+### Topología obligatoria
+
+```text
+START
+  → extract_requirements      # reformulate_query → brief + requirements
+  → classify_components       # run_structure_agent → task = Component
+  → search_budgets            # serial for-loop (NO asyncio.gather / Send)
+  → generate_estimate         # calculate_estimate (mediana + 15%)
+  → validate_and_consolidate  # validate_estimate → status
+  → END
+```
+
+| Pieza | Ubicación |
+|-------|-----------|
+| Estado + reducers | `app/generation/agentic/graph/state.py` |
+| Nodos | `app/generation/agentic/graph/nodes.py` |
+| Cableado | `app/generation/agentic/graph/build.py` |
+| Checkpointer | `app/foundation/persistence/langgraph.py` (`AsyncPostgresSaver`) |
+| Logfire | `app/foundation/observability/logfire_setup.py` + spans `agent.graph.*` |
+| Conductor | `app/domain/graph_estimation.py` |
+| Contrato HTTP | `app/domain/schemas/graph_estimation.py` |
+| Router | `app/api/routers/estimate_graph.py` |
+
+`estimation_id` del request es el `thread_id` del checkpointer. Sin Postgres el
+endpoint responde **503** (nunca hay fallback silencioso a memoria). `needs_review`
+es un resultado de negocio en **200**; fallos técnicos van a 502/503.
+
+Fuera de alcance (directo): fan-out con `Send`, retries, `interrupt()` / HITL,
+ciclos de corrección.
+
+Variables de entorno:
+
+```bash
+LANGGRAPH_ENABLED=true
+LOGFIRE_TOKEN=          # optional; send_to_logfire=if-token-present
+LOGFIRE_SERVICE_NAME=estimador-cag
+```
+
+CLI (`scripts/run_agent_s13.py`) — cliente HTTP del endpoint real:
+
+```bash
+uv run python scripts/run_agent_s13.py \
+  exercises/session-12/sample_transcript_complex.txt \
+  --base-url http://localhost:8000 \
+  --api-key "$ESTIMATE_API_KEY" \
+  --out exercises/session-13/example_graph_response.json
+```
+
+Manifiesto de evidencia: [`exercises/session-13/README.md`](exercises/session-13/README.md).
+
+Tests (offline):
+
+```bash
+uv run pytest tests/unit/generation/agentic/graph -q
+uv run pytest tests/unit/domain/test_graph_estimation.py \
+  tests/unit/api/test_estimate_graph.py \
+  tests/unit/test_langgraph_persistence.py \
+  tests/unit/test_run_agent_s13.py -q
+```
+
+Integración Postgres (aparte):
+
+```bash
+uv run pytest tests/integration/test_graph_checkpoint_postgres.py -m integration -q
 ```
 
 ## Ejecutar la app de Streamlit
