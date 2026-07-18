@@ -359,6 +359,7 @@ __all__ = [
     "LegacyRetrievalBackend",
     "ReformulateFn",
     "StructureFn",
+    "_estimation_id",
     "make_graph_nodes",
     "requirements_from_brief",
     "structure_to_components",

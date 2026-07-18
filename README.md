@@ -79,7 +79,7 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Histórico RAG + Ajustes IA):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Grafo Agentes + Histórico RAG + Ajustes IA):
 
 ```bash
 uv run streamlit run streamlit_ui/home.py
@@ -143,17 +143,19 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   (`derive_task_hours` + consenso ponderado). Endpoints
   `POST /v1/estimate/agent/structure` y `/hours`, perfiles/avatares/runs en SQLite
   Streamlit, CLI `--workflow hybrid|recovery-demo|legacy`.
-- **Sesión 13**: orquestación LangGraph secuencial
-  (`extract_requirements` → `classify_components` → `search_budgets` →
-  `generate_estimate` → `validate_and_consolidate`), estado tipado con reducers,
-  checkpoints en el PostgreSQL existente (`AsyncPostgresSaver`), trazas Logfire
-  (un span por nodo) y endpoint aditivo `POST /v1/estimate/agent/graph`.
+- **Sesión 13**: grafo LangGraph **multiagente** con dos gates humanos
+  (`classifier_agent` → `structure_agent` → gate 1 → fan-out de horas → recovery →
+  `analysis_agent` → gate 2 → propuesta opcional), checkpoints en PostgreSQL
+  (`AsyncPostgresSaver`), feed de actividad Redis/memoria, personas Matrix y API
+  completa bajo `/v1/estimate/agent/graph` (start/resume/state/stream/progress/proposal).
+  El pipeline secuencial de 5 nodos permanece en código para tests.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
-  RAG Estimación (wizard S12), Agentes, Histórico RAG, Corpus Index y Ajustes IA;
+  RAG Estimación (wizard S12), Agentes, Grafo Agentes (wizard S13), Histórico RAG,
+  Corpus Index y Ajustes IA;
   persistencia SQLite (`estimations`, `chat_sessions`, `chunking_comparisons`,
-  `agent_profiles`, `rag_estimation_runs`).
+  `agent_profiles`, `rag_estimation_runs`, `graph_estimation_runs`).
 - Pruebas de renderizado de prompts con `pytest`.
 
 ## Stack tecnológico
@@ -173,6 +175,7 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - ragas + datasets + langchain-google-vertexai (evaluación offline Session 11, grupo `dev`)
 - langgraph + langgraph-checkpoint-postgres (orquestación Session 13)
 - logfire[fastapi,httpx] (observabilidad full-stack Session 13)
+- fpdf2 (export PDF de propuestas comerciales en Streamlit, Session 13)
 - pandas + Pandera (limpieza y validación de presupuestos)
 - Presidio + spaCy (`es_core_news_md`) + Faker (PII/GDPR)
 - Pytest
@@ -447,7 +450,11 @@ Endpoints locales predeterminados:
 - `POST /v1/estimate/tasks/hours` (horas por tarea desde corpus histórico, S10)
 - `POST /v1/estimate/agent/structure` (estructura agéntica sin horas, S12)
 - `POST /v1/estimate/agent/hours` (horas deterministas + recovery, S12)
-- `POST /v1/estimate/agent/graph` (LangGraph secuencial transcript→estimate+status, S13)
+- `POST /v1/estimate/agent/graph` (grafo multiagente: start → gate 1, S13)
+- `POST /v1/estimate/agent/graph/{estimation_id}/resume` (resume gate, S13)
+- `GET /v1/estimate/agent/graph/{estimation_id}/state` (snapshot, S13)
+- `POST /v1/estimate/agent/graph/stream` + `GET …/progress` (panel en vivo, S13)
+- `POST /v1/estimate/agent/graph/{estimation_id}/proposal` (propuesta comercial, S13)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 - `GET /api/v1/config/retrieval` / `PUT /api/v1/config/retrieval` (toggles recuperación S10)
@@ -1009,51 +1016,50 @@ docker compose exec postgres psql -U estimator -d estimator -c \
    WHERE content_tsv @@ q ORDER BY r DESC LIMIT 5;"
 ```
 
-## Sesión 13 — orquestación LangGraph (pre-sesión)
+## Sesión 13 — grafo LangGraph multiagente
 
-Flujo de estimación reexpresado como un **StateGraph** secuencial de bajo nivel
-(no `create_agent`). Los endpoints S9–S12 permanecen intactos; S13 añade
-`POST /v1/estimate/agent/graph`.
+Flujo de estimación con **ocho agentes**, dos gates humanos (`interrupt()` /
+`Command(resume=…)`) y fan-out de horas por tarea. El pipeline secuencial de
+cinco nodos permanece en código (`build_sequential_graph`) para tests; producción
+usa `build_estimation_graph`.
 
-### Topología obligatoria
+### Topología multiagente
 
 ```text
-START
-  → extract_requirements      # reformulate_query → brief + requirements
-  → classify_components       # run_structure_agent → task = Component
-  → search_budgets            # serial for-loop (NO asyncio.gather / Send)
-  → generate_estimate         # calculate_estimate (mediana + 15%)
-  → validate_and_consolidate  # validate_estimate → status
-  → END
+START → classifier_agent ─Command→ structure_agent → human_gate_structure
+  → estimate_task_hours ×N (Send) → recover_and_handover ─Command→ analysis_agent
+  → human_gate_analysis ─conditional→ proposal_agent | END
 ```
 
 | Pieza | Ubicación |
 |-------|-----------|
 | Estado + reducers | `app/generation/agentic/graph/state.py` |
-| Nodos | `app/generation/agentic/graph/nodes.py` |
+| Nodos multiagente | `app/generation/agentic/graph/agent_nodes.py` |
 | Cableado | `app/generation/agentic/graph/build.py` |
-| Checkpointer | `app/foundation/persistence/langgraph.py` (`AsyncPostgresSaver`) |
-| Logfire | `app/foundation/observability/logfire_setup.py` + spans `agent.graph.*` |
+| Feed actividad | `app/generation/agentic/graph/activity.py` |
+| Personas | `app/generation/agentic/graph/personas.py` |
 | Conductor | `app/domain/graph_estimation.py` |
-| Contrato HTTP | `app/domain/schemas/graph_estimation.py` |
 | Router | `app/api/routers/estimate_graph.py` |
+| Wizard Streamlit | `streamlit_ui/pages/9_Grafo_Agentes.py` |
 
-`estimation_id` del request es el `thread_id` del checkpointer. Sin Postgres el
-endpoint responde **503** (nunca hay fallback silencioso a memoria). `needs_review`
-es un resultado de negocio en **200**; fallos técnicos van a 502/503.
+`estimation_id` del request es el `thread_id` del checkpointer. Sin Postgres → **503**.
+Resume sin gate pendiente → **409**. Snapshot desconocido → **404**.
 
-Fuera de alcance (directo): fan-out con `Send`, retries, `interrupt()` / HITL,
-ciclos de corrección.
-
-Variables de entorno:
+Variables de entorno (`.env`):
 
 ```bash
 LANGGRAPH_ENABLED=true
-LOGFIRE_TOKEN=          # optional; send_to_logfire=if-token-present
+GRAPH_CLASSIFIER_MODEL=gpt-5-mini
+GRAPH_ANALYSIS_MODEL=gpt-5
+GRAPH_PROPOSAL_MODEL=gpt-5
+GRAPH_PROPOSAL_ENABLED=true
+GRAPH_PERSONAS_ENABLED=true
+GRAPH_ACTIVITY_TTL=3600
+LOGFIRE_TOKEN=          # optional
 LOGFIRE_SERVICE_NAME=estimador-cag
 ```
 
-CLI (`scripts/run_agent_s13.py`) — cliente HTTP del endpoint real:
+CLI (`scripts/run_agent_s13.py`) — start → resume por gate → state:
 
 ```bash
 uv run python scripts/run_agent_s13.py \
@@ -1063,7 +1069,7 @@ uv run python scripts/run_agent_s13.py \
   --out exercises/session-13/example_graph_response.json
 ```
 
-Manifiesto de evidencia: [`exercises/session-13/README.md`](exercises/session-13/README.md).
+Flag `--no-proposal` omite `want_proposal` en el gate 2.
 
 Tests (offline):
 
@@ -1071,14 +1077,8 @@ Tests (offline):
 uv run pytest tests/unit/generation/agentic/graph -q
 uv run pytest tests/unit/domain/test_graph_estimation.py \
   tests/unit/api/test_estimate_graph.py \
-  tests/unit/test_langgraph_persistence.py \
+  tests/unit/test_streamlit_graph_flow.py \
   tests/unit/test_run_agent_s13.py -q
-```
-
-Integración Postgres (aparte):
-
-```bash
-uv run pytest tests/integration/test_graph_checkpoint_postgres.py -m integration -q
 ```
 
 ## Ejecutar la app de Streamlit

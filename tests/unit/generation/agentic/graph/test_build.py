@@ -12,7 +12,7 @@ from app.generation.agentic.agent_schemas import (
     AgentTaskNode,
     SearchBudgetsArgs,
 )
-from app.generation.agentic.graph.build import NODE_NAMES, build_estimation_graph
+from app.generation.agentic.graph.build import NODE_NAMES, build_sequential_graph
 from app.generation.agentic.graph.nodes import GraphNodeDeps
 from app.generation.rag.schemas import EstimationQuery
 
@@ -58,7 +58,7 @@ def _deps(order: list[str]) -> GraphNodeDeps:
 @pytest.mark.asyncio
 async def test_graph_runs_five_nodes_in_mandatory_order():
     order: list[str] = []
-    graph = build_estimation_graph(_deps(order), checkpointer=InMemorySaver())
+    graph = build_sequential_graph(_deps(order), checkpointer=InMemorySaver())
     result = await graph.ainvoke(
         {"transcript": "Build a portal"},
         config={"configurable": {"thread_id": "topo-1"}},
@@ -82,7 +82,7 @@ async def test_graph_runs_five_nodes_in_mandatory_order():
 @pytest.mark.asyncio
 async def test_graph_exposes_estimate_and_status():
     order: list[str] = []
-    graph = build_estimation_graph(_deps(order))
+    graph = build_sequential_graph(_deps(order))
     result = await graph.ainvoke(
         {"transcript": "Build a portal"},
         config={"configurable": {"thread_id": "topo-2"}},

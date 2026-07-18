@@ -148,6 +148,24 @@ def init_schema(conn: sqlite3.Connection) -> None:
             ON rag_estimation_runs(updated_at DESC);
         CREATE INDEX IF NOT EXISTS idx_rag_runs_status_mode
             ON rag_estimation_runs(status, mode);
+
+        CREATE TABLE IF NOT EXISTS graph_estimation_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            estimation_id TEXT NOT NULL UNIQUE,
+            transcript TEXT NOT NULL,
+            graph_state TEXT,
+            complexity TEXT,
+            structure TEXT,
+            estimate TEXT,
+            analysis_report TEXT,
+            proposal TEXT,
+            status TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_graph_runs_updated
+            ON graph_estimation_runs(updated_at DESC);
         """
     )
     conn.commit()
@@ -988,3 +1006,121 @@ def clone_rag_estimation_run(run_id: int, *, db_path: str | None = None) -> int:
         else "transcript",
         db_path=db_path,
     )
+
+
+_GRAPH_RUN_JSON_COLUMNS = {
+    "graph_state",
+    "structure",
+    "estimate",
+    "analysis_report",
+}
+
+
+def _graph_run_record(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    item = _row_to_dict(row)
+    for column in _GRAPH_RUN_JSON_COLUMNS:
+        if column in item:
+            item[column] = _parse_json_column(item[column])
+    return item
+
+
+def create_graph_estimation_run(
+    *,
+    estimation_id: str,
+    transcript: str,
+    db_path: str | None = None,
+    **values: Any,
+) -> int:
+    now = _utc_now()
+    payload = {
+        "estimation_id": estimation_id,
+        "transcript": transcript,
+        **values,
+    }
+    columns = list(payload)
+    serialized = [
+        _json_dump(payload[column])
+        if column in _GRAPH_RUN_JSON_COLUMNS
+        else payload[column]
+        for column in columns
+    ]
+    columns.extend(["created_at", "updated_at"])
+    serialized.extend([now, now])
+    placeholders = ", ".join("?" for _ in columns)
+    cursor = get_connection(db_path).execute(
+        f"INSERT INTO graph_estimation_runs ({', '.join(columns)}) VALUES ({placeholders})",
+        serialized,
+    )
+    cursor.connection.commit()
+    return int(cursor.lastrowid)
+
+
+def update_graph_estimation_run(
+    run_id: int, *, db_path: str | None = None, **changes: Any
+) -> None:
+    allowed = {
+        "graph_state",
+        "complexity",
+        "structure",
+        "estimate",
+        "analysis_report",
+        "proposal",
+        "status",
+    }
+    updates = {key: value for key, value in changes.items() if key in allowed}
+    if not updates:
+        return
+    assignments = [f"{key} = ?" for key in updates]
+    values = [
+        _json_dump(value) if key in _GRAPH_RUN_JSON_COLUMNS else value
+        for key, value in updates.items()
+    ]
+    assignments.append("updated_at = ?")
+    values.extend([_utc_now(), run_id])
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            f"UPDATE graph_estimation_runs SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+
+
+def get_graph_estimation_run(
+    run_id: int, *, db_path: str | None = None
+) -> dict[str, Any] | None:
+    row = (
+        get_connection(db_path)
+        .execute("SELECT * FROM graph_estimation_runs WHERE id = ?", (run_id,))
+        .fetchone()
+    )
+    return _graph_run_record(row)
+
+
+def get_graph_estimation_run_by_estimation_id(
+    estimation_id: str, *, db_path: str | None = None
+) -> dict[str, Any] | None:
+    row = (
+        get_connection(db_path)
+        .execute(
+            "SELECT * FROM graph_estimation_runs WHERE estimation_id = ?",
+            (estimation_id,),
+        )
+        .fetchone()
+    )
+    return _graph_run_record(row)
+
+
+def list_graph_estimation_runs(
+    *, limit: int = 100, db_path: str | None = None
+) -> list[dict[str, Any]]:
+    rows = (
+        get_connection(db_path)
+        .execute(
+            "SELECT * FROM graph_estimation_runs ORDER BY updated_at DESC, id DESC LIMIT ?",
+            (limit,),
+        )
+        .fetchall()
+    )
+    return [record for row in rows if (record := _graph_run_record(row)) is not None]

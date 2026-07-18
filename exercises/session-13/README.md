@@ -1,22 +1,24 @@
-# Sesión 13 — Estimación secuencial con LangGraph (pre-sesión)
+# Sesión 13 — grafo multiagente con gates humanos
 
-Endpoint entregable: `POST /v1/estimate/agent/graph`
+Endpoint principal: `POST /v1/estimate/agent/graph` (bloqueante hasta gate 1).
+
+También: `…/resume`, `…/state`, `…/stream`, `…/progress`, `…/proposal`.
 
 ## Topología
 
 ```text
-START
-  → extract_requirements
-  → classify_components
-  → search_budgets          # secuencial (un componente cada vez)
-  → generate_estimate
-  → validate_and_consolidate
-  → END
+START → classifier_agent ─Command→ structure_agent → human_gate_structure
+  → estimate_task_hours ×N (Send) → recover_and_handover ─Command→ analysis_agent
+  → human_gate_analysis ─conditional→ proposal_agent | END
 ```
+
+El pipeline secuencial de 5 nodos permanece en código (`build_sequential_graph`)
+solo para tests; producción usa `build_estimation_graph`.
 
 ## Reproducir
 
-Reutilizar la transcripción compleja de la Sesión 12:
+Reutilizar la transcripción compleja de la Sesión 12. El CLI hace start → resume
+automático por gate (estructura aprobada + validación con propuesta):
 
 ```bash
 # Stack levantado + corpus historical_task ingerido
@@ -27,20 +29,19 @@ uv run python scripts/run_agent_s13.py \
   --out exercises/session-13/example_graph_response.json
 ```
 
-## Manifiesto de evidencia
+Flag `--no-proposal` omite la propuesta comercial en el gate 2.
+
+## Evidencia esperada
 
 | Campo | Valor |
 | --- | --- |
-| estimation_id / thread_id | `s13-acceptance-final` |
-| comando | `uv run python scripts/run_agent_s13.py exercises/session-12/sample_transcript_complex.txt --estimation-id s13-acceptance-final --out exercises/session-13/example_graph_response.json` |
-| estado HTTP | `200` |
-| status del grafo | `needs_review` |
-| número de componentes | `16` (1 con presupuesto, 15 supuestos sin referencias) |
-| total_hours | `51.2` |
-| Logfire | solo spans locales (`LOGFIRE_TOKEN` vacío → `send_to_logfire=if-token-present`); cinco spans `agent.graph.*` observados en los logs de la API; sin URL remota |
-| checkpoint presente | sí — 7 filas en `checkpoints` para `thread_id=s13-acceptance-final` |
+| estimation_id / thread_id | el `estimation_id` del request |
+| estado HTTP start | `200` con `state=paused`, `pending_gate.gate=structure_review` |
+| estado final | `completed`, `status=validated` (con proposal si no usaste `--no-proposal`) |
+| Logfire | spans `agent.graph.classifier_agent` … `proposal_agent` + gates |
+| checkpoint | filas en `checkpoints` para el `thread_id` |
 
-Artefacto de respuesta: [`example_graph_response.json`](example_graph_response.json).
+Artefacto de ejemplo (pre-sesión secuencial, legado):
+[`example_graph_response.json`](example_graph_response.json).
 
-En esta corrida se observó el waterfall serial de `search_budgets` (un span de
-componente tras otro) en el log de la API.
+Wizard Streamlit: página **Grafo Agentes** (`streamlit_ui/pages/9_Grafo_Agentes.py`).

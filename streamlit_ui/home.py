@@ -49,6 +49,9 @@ with col1:
     st.page_link("pages/7_Agentes.py", label="Agentes", icon="🤖")
     st.caption("Perfiles handwritten, personas, avatares y knobs del agente.")
 
+    st.page_link("pages/9_Grafo_Agentes.py", label="Grafo Agentes", icon="🕸")
+    st.caption("Wizard S13: grafo multiagente con gates humanos y panel en vivo.")
+
 with col2:
     st.page_link("pages/2_Conversacion.py", label="Conversación", icon="💬")
     st.caption("Sesiones, adjuntos, memoria comprimida y Actor-Critic-Boss.")

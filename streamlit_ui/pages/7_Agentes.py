@@ -10,6 +10,7 @@ runpy.run_path(str(Path(__file__).resolve().parent.parent / "path_setup.py"))
 import streamlit as st
 
 from streamlit_ui.agents import AgentProfile, avatar_data_uri, profile_summary
+from streamlit_ui.graph_flow import GRAPH_NODES
 from streamlit_ui.common import (
     INHERITED_MODEL_LABEL,
     fetch_available_agent_models,
@@ -198,6 +199,18 @@ if selected_id is not None:
         if st.button("Eliminar perfil", disabled=not confirm_delete):
             delete_agent_profile(selected_id)
             st.rerun()
+
+st.divider()
+st.subheader("Agentes del grafo (S13)")
+st.caption("Catálogo didáctico del flujo multiagente con gates humanos.")
+for node in GRAPH_NODES:
+    character = node.get("character") or {}
+    st.markdown(
+        f"**{character.get('avatar', '🤖')} {node['label']}** — {node['role']} "
+        f"(`{node.get('config_key') or '—'}`)"
+    )
+    st.caption(node["explanation"])
+st.page_link("pages/9_Grafo_Agentes.py", label="Abrir wizard del grafo", icon="🕸")
 
 st.divider()
 st.subheader("Actor-Critic-Boss (solo lectura)")

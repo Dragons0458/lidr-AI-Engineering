@@ -13,7 +13,7 @@ from app.generation.agentic.agent_schemas import (
     AgentTaskNode,
     SearchBudgetsArgs,
 )
-from app.generation.agentic.graph.build import build_estimation_graph
+from app.generation.agentic.graph.build import build_sequential_graph
 from app.generation.agentic.graph.nodes import GraphNodeDeps
 from app.generation.rag.schemas import EstimationQuery
 
@@ -56,7 +56,7 @@ async def test_graph_emits_five_node_spans(monkeypatch):
             }
         ]
 
-    graph = build_estimation_graph(
+    graph = build_sequential_graph(
         GraphNodeDeps(
             reformulate=reformulate,
             propose_structure=propose_structure,

@@ -25,6 +25,7 @@ dependencies = [
     "sse-starlette>=2.1",
     "starlette>=1.0.0",
     "streamlit>=1.57.0",
+    "fpdf2",
     "structlog",
     "tiktoken>=0.7",
     "uvicorn[standard]",

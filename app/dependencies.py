@@ -40,6 +40,13 @@ log = structlog.get_logger()
 
 
 @lru_cache
+def get_graph_activity():
+    from app.generation.agentic.graph.activity import GraphActivityLog
+
+    return GraphActivityLog.from_settings(get_settings())
+
+
+@lru_cache
 def get_cache() -> EstimationCache:
     settings = get_settings()
     return EstimationCache.from_url(settings.REDIS_URL, ttl=settings.CACHE_TTL)

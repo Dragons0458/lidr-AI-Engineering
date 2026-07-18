@@ -1,16 +1,12 @@
-"""Integration: AsyncPostgresSaver on the shared estimator Postgres.
-
-Marked so the offline suite stays network/DB free. Run with::
-
-    uv run pytest tests/integration/test_graph_checkpoint_postgres.py -m integration -q
-"""
+"""Integration: multi-agent graph pauses on Postgres checkpointer."""
 
 from __future__ import annotations
 
 import uuid
 
 import pytest
-from langgraph.checkpoint.memory import InMemorySaver
+from langgraph.checkpoint.memory import MemorySaver
+from langgraph.types import Command
 
 from app.config import get_settings
 from app.foundation.persistence.langgraph import (
@@ -22,20 +18,29 @@ from app.generation.agentic.agent_schemas import (
     AgentModuleNode,
     AgentStructure,
     AgentTaskNode,
-    SearchBudgetsArgs,
 )
+from app.generation.agentic.graph.agent_nodes import MultiAgentDeps
 from app.generation.agentic.graph.build import build_estimation_graph
-from app.generation.agentic.graph.nodes import GraphNodeDeps
-from app.generation.rag.schemas import EstimationQuery
+from app.generation.agentic.graph.schemas import (
+    ComplexityClassification,
+    ReliabilityReport,
+)
+from app.generation.rag.schemas import TaskHoursEstimate
 
 pytestmark = pytest.mark.integration
 
+TRANSCRIPT = "Build a portal with authentication and reporting modules."
 
-def _deps() -> GraphNodeDeps:
-    async def reformulate(transcript: str) -> EstimationQuery:
-        return EstimationQuery(function="Portal")
 
-    async def propose_structure(brief: EstimationQuery) -> AgentStructure:
+def _deps() -> MultiAgentDeps:
+    async def classify(transcript: str) -> ComplexityClassification:
+        return ComplexityClassification(
+            complexity="medium",
+            reformulated_transcript=transcript,
+            reasoning="ok",
+        )
+
+    async def propose_structure(brief: str, reasoning_effort: str) -> AgentStructure:
         return AgentStructure(
             modules=[
                 AgentModuleNode(
@@ -47,83 +52,101 @@ def _deps() -> GraphNodeDeps:
             reasoning="ok",
         )
 
-    async def backend(args: SearchBudgetsArgs) -> list[dict]:
-        return [
-            {
-                "id": 1,
-                "budget_id": "B1",
-                "estimated_hours": 40,
-                "distance": 0.2,
-            }
-        ]
+    async def estimate_task(module, name, description):
+        return TaskHoursEstimate(
+            module=module,
+            task=name,
+            estimated_hours=40,
+            reliability=0.9,
+            has_match=True,
+            neighbors=[],
+        )
 
-    return GraphNodeDeps(
-        reformulate=reformulate,
+    async def analyze(digest: str) -> ReliabilityReport:
+        return ReliabilityReport(
+            overall_confidence="high",
+            grounded_task_ratio=1.0,
+            weak_points=[],
+            summary="ok",
+        )
+
+    async def propose(user_message: str):
+        from app.generation.agentic.graph.schemas import CommercialProposal
+
+        return CommercialProposal(
+            title="T",
+            executive_summary="S",
+            body_markdown="# Proposal",
+        )
+
+    return MultiAgentDeps(
+        classify=classify,
         propose_structure=propose_structure,
-        retrieval_backend=backend,
+        estimate_task=estimate_task,
+        recover=None,
+        analyze=analyze,
+        propose=propose,
+        recovery_reliability_threshold=0.35,
+        structure_effort_by_complexity={
+            "low": "low",
+            "medium": "medium",
+            "high": "high",
+        },
+        default_reasoning_effort="medium",
     )
 
 
 @pytest.mark.asyncio
-async def test_async_postgres_saver_isolates_threads():
+async def test_multiagent_graph_pauses_on_gate1_with_postgres():
     settings = get_settings()
-    # Smoke the URL conversion even if the DB is down.
     assert "postgresql://" in to_libpq_conninfo(settings.DATABASE_URL)
 
     try:
         runtime = await open_langgraph_runtime(
             settings.DATABASE_URL,
             build_graph=lambda checkpointer: build_estimation_graph(
-                _deps(), checkpointer=checkpointer
+                _deps(), checkpointer=checkpointer, proposal_enabled=False
             ),
         )
     except Exception as exc:  # noqa: BLE001
         pytest.skip(f"Postgres unavailable: {exc}")
 
+    thread_id = f"s13-multi-{uuid.uuid4()}"
+    config = {"configurable": {"thread_id": thread_id}}
     try:
-        thread_a = f"s13-a-{uuid.uuid4()}"
-        thread_b = f"s13-b-{uuid.uuid4()}"
-        result_a = await runtime.graph.ainvoke(
-            {"transcript": "portal a"},
-            config={"configurable": {"thread_id": thread_a}},
+        await runtime.graph.ainvoke(
+            {"transcript": TRANSCRIPT, "estimation_id": thread_id},
+            config=config,
         )
-        result_b = await runtime.graph.ainvoke(
-            {"transcript": "portal b"},
-            config={"configurable": {"thread_id": thread_b}},
-        )
-        assert result_a["status"] in {"validated", "needs_review"}
-        assert result_b["status"] in {"validated", "needs_review"}
+        snap = await runtime.graph.aget_state(config)
+        assert snap.next == ("human_gate_structure",)
+        assert snap.interrupts[0].value["gate"] == "structure_review"
 
-        snap_a = await runtime.graph.aget_state(
-            {"configurable": {"thread_id": thread_a}}
+        await runtime.graph.ainvoke(Command(resume={"approved": True}), config)
+        snap = await runtime.graph.aget_state(config)
+        assert snap.next == ("human_gate_analysis",)
+
+        result = await runtime.graph.ainvoke(
+            Command(resume={"validated": True, "want_proposal": False}),
+            config,
         )
-        snap_b = await runtime.graph.aget_state(
-            {"configurable": {"thread_id": thread_b}}
-        )
-        assert snap_a.values.get("transcript") == "portal a"
-        assert snap_b.values.get("transcript") == "portal b"
-        assert len(snap_a.values.get("budget_matches") or []) >= 1
+        assert result["status"] == "validated"
+        final = await runtime.graph.aget_state(config)
+        assert final.next == ()
     finally:
         await close_langgraph_runtime(runtime)
 
 
 @pytest.mark.asyncio
-async def test_memory_saver_does_not_duplicate_on_fresh_invoke():
-    """Control: fresh thread_id with only transcript never duplicates matches."""
-    graph = build_estimation_graph(_deps(), checkpointer=InMemorySaver())
-    thread = f"mem-{uuid.uuid4()}"
-    first = await graph.ainvoke(
-        {"transcript": "portal"},
-        config={"configurable": {"thread_id": thread}},
+async def test_memory_saver_multiagent_pause_resume():
+    graph = build_estimation_graph(
+        _deps(), checkpointer=MemorySaver(), proposal_enabled=False
     )
-    # Re-invoke same thread with only transcript (as the conductor does).
-    second = await graph.ainvoke(
-        {"transcript": "portal"},
-        config={"configurable": {"thread_id": thread}},
+    thread = f"mem-multi-{uuid.uuid4()}"
+    config = {"configurable": {"thread_id": thread}}
+    await graph.ainvoke(
+        {"transcript": TRANSCRIPT, "estimation_id": thread},
+        config=config,
     )
-    # A full re-run appends via reducer when the graph runs again on same thread.
-    # The conductor contract is: clients use a NEW estimation_id per estimation.
-    assert len(first.get("budget_matches") or []) >= 1
-    assert len(second.get("budget_matches") or []) >= len(
-        first.get("budget_matches") or []
-    )
+    snap = await graph.aget_state(config)
+    assert snap.next == ("human_gate_structure",)

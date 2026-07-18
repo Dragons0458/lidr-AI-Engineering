@@ -1,9 +1,9 @@
 """Typed shared state for the Session 13 estimation graph.
 
-Fields without a reducer overwrite on each update. ``budget_matches`` and
-``errors`` accumulate with ``operator.add`` so a future fan-out can fan-in
-without losing partial results. Every value must stay JSON-serializable —
-no clients, SDK responses, or DB connections belong here.
+Fields without a reducer overwrite on each update. ``budget_matches``,
+``errors`` and ``task_hours`` use reducers so fan-out / resume stay idempotent.
+Every value must stay JSON-serializable — no clients, SDK responses, or DB
+connections belong here.
 """
 
 from __future__ import annotations
@@ -36,16 +36,49 @@ class BudgetMatch(TypedDict):
     distance: float
 
 
+def merge_task_hours(existing: list[dict] | None, new: list[dict] | None) -> list[dict]:
+    """Keyed reducer for per-task hours fan-out — dedupe by (module, task)."""
+    by_key: dict[tuple[str, str], dict] = {
+        (t.get("module"), t.get("task")): t for t in (existing or [])
+    }
+    for t in new or []:
+        by_key[(t.get("module"), t.get("task"))] = t
+    return list(by_key.values())
+
+
 class EstimationState(TypedDict, total=False):
-    """Partial updates are merges; only annotated list fields accumulate."""
+    """Partial updates are merges; annotated list fields accumulate."""
 
     transcript: str
+    estimation_id: str
     project_brief: dict
+
+    # --- classifier_agent -------------------------------------------------- #
+    complexity: str | None
+    reformulated_transcript: str | None
+
+    # --- legacy sequential pipeline (pre-exercise nodes/tests) ----------- #
     requirements: list[str]
     components: list[Component]
     budget_matches: Annotated[list[BudgetMatch], operator.add]
-    estimate: dict
-    status: GraphStatus
+
+    # --- structure_agent + human gate 1 ------------------------------------ #
+    structure: dict | None
+    approved_modules: list[dict] | None
+    gate1_decision: dict | None
+
+    # --- hours fan-out + merged estimate ----------------------------------- #
+    task_hours: Annotated[list[dict], merge_task_hours]
+    estimate: dict | None
+
+    # --- analysis_agent + human gate 2 ------------------------------------- #
+    analysis_report: dict | None
+    gate2_decision: dict | None
+
+    # --- proposal_agent (bonus) -------------------------------------------- #
+    proposal: str | None
+
+    status: GraphStatus | None
     errors: Annotated[list[str], operator.add]
 
 

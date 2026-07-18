@@ -84,6 +84,7 @@ async def lifespan(app: FastAPI):
         log.error("catalog_load_failed", error=str(exc)[:400])
 
     app.state.graph_runtime = None
+    app.state.multiagent_deps = None
     if settings.LANGGRAPH_ENABLED:
         try:
             from app.dependencies import (
@@ -91,24 +92,23 @@ async def lifespan(app: FastAPI):
                 get_runtime_retrieval_config,
             )
             from app.domain.graph_estimation import (
-                build_default_graph_deps,
+                build_default_multiagent_deps,
                 compile_estimation_graph,
             )
 
             runtime_retrieval = get_runtime_retrieval_config()
-            deps = build_default_graph_deps(
+            multiagent_deps = build_default_multiagent_deps(
                 client=get_async_openai_client(),
-                model=settings.AGENT_MODEL,
-                reasoning_effort=settings.AGENT_REASONING_EFFORT,
-                top_k=settings.AGENT_SEARCH_TOP_K,
-                distance_threshold=settings.AGENT_SEARCH_DISTANCE_THRESHOLD,
-                search_mode=runtime_retrieval.effective_search_mode(),
-                rerank=runtime_retrieval.effective_rerank(),
+                settings=settings,
+                runtime_retrieval=runtime_retrieval,
             )
+            app.state.multiagent_deps = multiagent_deps
             app.state.graph_runtime = await open_langgraph_runtime(
                 settings.DATABASE_URL,
                 build_graph=lambda checkpointer: compile_estimation_graph(
-                    deps, checkpointer=checkpointer
+                    multiagent_deps,
+                    checkpointer=checkpointer,
+                    proposal_enabled=settings.GRAPH_PROPOSAL_ENABLED,
                 ),
             )
         except Exception as exc:  # noqa: BLE001
@@ -125,6 +125,7 @@ async def lifespan(app: FastAPI):
     finally:
         await close_langgraph_runtime(getattr(app.state, "graph_runtime", None))
         app.state.graph_runtime = None
+        app.state.multiagent_deps = None
         log.info("application_shutdown")
 
 
@@ -153,7 +154,12 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /v1/estimate/tasks/hours → Per-task hours from historical corpus (S10)
 - POST /v1/estimate/agent/structure → Estructura agéntica sin horas (S12)
 - POST /v1/estimate/agent/hours → Horas deterministas + recovery agéntico (S12)
-- POST /v1/estimate/agent/graph → Estimación LangGraph secuencial (S13)
+- POST /v1/estimate/agent/graph → Grafo multiagente LangGraph con gates humanos (S13)
+- POST /v1/estimate/agent/graph/{estimation_id}/resume → Reanudar gate humano (S13)
+- GET /v1/estimate/agent/graph/{estimation_id}/state → Estado del grafo (S13)
+- POST /v1/estimate/agent/graph/stream → Inicio en background con feed de actividad (S13)
+- GET /v1/estimate/agent/graph/{estimation_id}/progress → Progreso en vivo (S13)
+- POST /v1/estimate/agent/graph/{estimation_id}/proposal → Propuesta comercial (S13)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /api/v1/config/retrieval → Configuración runtime de recuperación (S10)
 - GET /health → Estado del servicio

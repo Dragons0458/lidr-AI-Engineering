@@ -107,6 +107,15 @@ class Settings(BaseSettings):
     LOGFIRE_TOKEN: str | None = None
     LOGFIRE_SERVICE_NAME: str = "estimador-cag"
     LANGGRAPH_ENABLED: bool = True
+    GRAPH_CLASSIFIER_MODEL: str = "gpt-5-mini"
+    GRAPH_ANALYSIS_MODEL: str = "gpt-5"
+    GRAPH_PROPOSAL_MODEL: str = "gpt-5"
+    GRAPH_PROPOSAL_ENABLED: bool = True
+    GRAPH_PERSONAS_ENABLED: bool = True
+    GRAPH_STRUCTURE_EFFORT_BY_COMPLEXITY: dict[str, str] = Field(
+        default_factory=lambda: {"low": "low", "medium": "medium", "high": "high"}
+    )
+    GRAPH_ACTIVITY_TTL: int = 3600
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
