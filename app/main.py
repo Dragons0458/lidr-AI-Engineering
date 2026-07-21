@@ -18,6 +18,7 @@ from app.api.routers.estimate import router as estimate_router
 from app.api.routers.estimate_agent import router as estimate_agent_router
 from app.api.routers.estimate_graph import router as estimate_graph_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
+from app.api.routers.estimate_supervisor import router as estimate_supervisor_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.retrieval import router as retrieval_router
 from app.api.routers.retrieval_advanced import router as retrieval_advanced_router
@@ -89,11 +90,16 @@ async def lifespan(app: FastAPI):
         try:
             from app.dependencies import (
                 get_async_openai_client,
+                get_llm_wrapper,
                 get_runtime_retrieval_config,
             )
             from app.domain.graph_estimation import (
                 build_default_multiagent_deps,
                 compile_estimation_graph,
+            )
+            from app.domain.supervisor_estimation import (
+                build_default_supervisor_deps,
+                compile_supervisor_graph,
             )
 
             runtime_retrieval = get_runtime_retrieval_config()
@@ -111,6 +117,25 @@ async def lifespan(app: FastAPI):
                     proposal_enabled=settings.GRAPH_PROPOSAL_ENABLED,
                 ),
             )
+            if settings.SUPERVISOR_ENABLED and app.state.graph_runtime is not None:
+                try:
+                    supervisor_deps = build_default_supervisor_deps(
+                        client=get_async_openai_client(),
+                        settings=settings,
+                        llm_wrapper=get_llm_wrapper(),
+                    )
+                    app.state.graph_runtime.supervisor_graph = compile_supervisor_graph(
+                        supervisor_deps,
+                        checkpointer=app.state.graph_runtime.checkpointer,
+                    )
+                    log.info("supervisor_graph_ready")
+                except Exception as supervisor_exc:  # noqa: BLE001
+                    app.state.graph_runtime.supervisor_graph = None
+                    log.error(
+                        "supervisor_graph_startup_failed",
+                        error=str(supervisor_exc)[:400],
+                        error_type=type(supervisor_exc).__name__,
+                    )
         except Exception as exc:  # noqa: BLE001
             app.state.graph_runtime = None
             log.error(
@@ -215,6 +240,7 @@ app.include_router(estimate_stages_router)
 app.include_router(estimate_tasks_router)
 app.include_router(estimate_agent_router)
 app.include_router(estimate_graph_router)
+app.include_router(estimate_supervisor_router)
 app.include_router(corpus_index_router)
 
 
