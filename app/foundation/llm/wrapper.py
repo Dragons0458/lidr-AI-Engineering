@@ -65,6 +65,30 @@ def is_reasoning_model(model: str) -> bool:
     return name.startswith("gpt-5") or name.startswith("o1") or name.startswith("o3")
 
 
+def _structured_generation_kwargs(
+    model: str,
+    *,
+    temperature: float,
+    reasoning_effort: str | None = None,
+) -> dict[str, Any]:
+    """Return provider-safe sampling knobs for an Instructor call.
+
+    LiteLLM rejects ``temperature=0`` for GPT-5/o-series models. Omitting the
+    parameter lets the provider use its supported default while keeping
+    deterministic structured output through the schema/tool contract.
+    """
+    kwargs: dict[str, Any] = {}
+    provider = provider_from_model(model)
+    if provider == "google":
+        kwargs["reasoning_effort"] = reasoning_effort or "none"
+    elif is_reasoning_model(model):
+        kwargs["reasoning_effort"] = reasoning_effort or "none"
+
+    if not is_reasoning_model(model):
+        kwargs["temperature"] = temperature
+    return kwargs
+
+
 def completion(**kwargs: Any) -> Any:
     """Module-level seam for tests (patch ``app.foundation.llm.wrapper.completion``)."""
     return litellm_completion(**kwargs)
@@ -234,13 +258,13 @@ class LLMWrapper:
             "max_tokens": max_tokens,
             "max_retries": max_retries,
             "timeout": self.timeout,
-            "temperature": temperature,
         }
-        provider = provider_from_model(resolved_model)
-        # Gemini 2.5 counts hidden "thinking" tokens against max_output_tokens;
-        # disable it for structured JSON so the budget goes to the visible response.
-        if provider in ("openai", "google"):
-            call_kwargs["reasoning_effort"] = "none"
+        call_kwargs.update(
+            _structured_generation_kwargs(
+                resolved_model,
+                temperature=temperature,
+            )
+        )
         try:
             instance = _get_instructor_client(resolved_model).chat.completions.create(
                 **call_kwargs
@@ -308,13 +332,13 @@ class LLMWrapper:
             "max_retries": max_retries,
             "timeout": self.timeout,
         }
-        provider = provider_from_model(resolved_model)
-        if reasoning_effort is not None:
-            call_kwargs["reasoning_effort"] = reasoning_effort
-        else:
-            call_kwargs["temperature"] = 0
-            if provider in ("openai", "google"):
-                call_kwargs["reasoning_effort"] = "none"
+        call_kwargs.update(
+            _structured_generation_kwargs(
+                resolved_model,
+                temperature=0,
+                reasoning_effort=reasoning_effort,
+            )
+        )
         try:
             instance = _get_instructor_client(resolved_model).chat.completions.create(
                 **call_kwargs
@@ -440,8 +464,9 @@ class LLMWrapper:
         if stream:
             kwargs["stream"] = True
 
+        provider = provider_from_model(model)
         if thinking_budget is not None:
-            if provider_from_model(model) == "anthropic":
+            if provider == "anthropic":
                 kwargs["thinking"] = {
                     "type": "enabled",
                     "budget_tokens": thinking_budget,
@@ -450,11 +475,12 @@ class LLMWrapper:
             else:
                 log.warning(
                     "thinking_budget_ignored_for_provider",
-                    provider=provider_from_model(model),
+                    provider=provider,
                     model=model,
                 )
-                kwargs["reasoning_effort"] = "none"
-        elif not stream:
+                if is_reasoning_model(model) or provider == "google":
+                    kwargs["reasoning_effort"] = "none"
+        elif not stream and (is_reasoning_model(model) or provider == "google"):
             kwargs["reasoning_effort"] = "none"
 
         return kwargs
