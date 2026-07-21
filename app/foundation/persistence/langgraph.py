@@ -26,6 +26,8 @@ class LangGraphRuntime:
     pool: AsyncConnectionPool
     checkpointer: AsyncPostgresSaver
     graph: Any
+    # Session 14 supervisor star graph — shares the same checkpointer/pool.
+    supervisor_graph: Any | None = None
 
 
 def to_libpq_conninfo(database_url: str) -> str:

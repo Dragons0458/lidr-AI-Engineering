@@ -116,6 +116,16 @@ class Settings(BaseSettings):
         default_factory=lambda: {"low": "low", "medium": "medium", "high": "high"}
     )
     GRAPH_ACTIVITY_TTL: int = 3600
+    # --- Session 14: supervisor multi-agent (StateGraph + Command) ---
+    SUPERVISOR_ENABLED: bool = True
+    SUPERVISOR_ROUTER_MODEL: str = "gpt-4o-mini"
+    SUPERVISOR_MAX_STEPS: int = 8
+    SUPERVISOR_CONFIDENCE_THRESHOLD: float = Field(default=0.6, ge=0, le=1)
+    SUPERVISOR_MIN_GROUNDED_RATIO: float = Field(default=0.5, ge=0, le=1)
+    SUPERVISOR_GROUNDING_MAX_DISTANCE: float = Field(default=0.55, ge=0, le=2)
+    SUPERVISOR_OUT_OF_RANGE_FACTOR: float = 2.0
+    SUPERVISOR_PRIVILEGE_STRICT: bool = False
+    SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS: int = 200
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"
