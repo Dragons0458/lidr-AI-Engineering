@@ -79,7 +79,7 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Grafo Agentes + Histórico RAG + Ajustes IA):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Grafo Agentes + Supervisor + Histórico RAG + Ajustes IA):
 
 ```bash
 uv run streamlit run streamlit_ui/home.py
@@ -149,11 +149,17 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   (`AsyncPostgresSaver`), feed de actividad Redis/memoria, personas Matrix y API
   completa bajo `/v1/estimate/agent/graph` (start/resume/state/stream/progress/proposal).
   El pipeline secuencial de 5 nodos permanece en código para tests.
+- **Sesión 14**: supervisor multiagente en topología **estrella** (`StateGraph` +
+  `Command`): el modelo decide el enrutado; tres frenos deterministas (presupuesto
+  de pasos, legalidad, fallback); privilegio exigible (`guarded_dispatch`) +
+  auditoría; gate HITL por señal (`interrupt()`). API bajo
+  `/v1/estimate/agent/supervisor` (thread `s14:{id}`); Wizard Streamlit
+  `pages/10_Supervisor.py`.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
-  RAG Estimación (wizard S12), Agentes, Grafo Agentes (wizard S13), Histórico RAG,
-  Corpus Index y Ajustes IA;
+  RAG Estimación (wizard S12), Agentes, Grafo Agentes (wizard S13), Supervisor
+  (wizard S14), Histórico RAG, Corpus Index y Ajustes IA;
   persistencia SQLite (`estimations`, `chat_sessions`, `chunking_comparisons`,
   `agent_profiles`, `rag_estimation_runs`, `graph_estimation_runs`).
 - Pruebas de renderizado de prompts con `pytest`.
@@ -203,9 +209,13 @@ app/
       estimate.py
       estimate_stages.py
       estimate_tasks.py          # POST /v1/estimate/tasks/hours (S10)
+      estimate_graph.py          # POST /v1/estimate/agent/graph* (S13)
+      estimate_supervisor.py     # POST /v1/estimate/agent/supervisor* (S14)
     config.py                    # GET/PUT /api/v1/config/models + /retrieval (S07/S10)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
+    graph_estimation.py          # Conductor S13 multi-agent graph
+    supervisor_estimation.py     # Conductor S14 supervisor star graph
     schemas/                     # Contratos Pydantic (estimation, ingestion, …)
   foundation/                    # Sin opinión de arquitectura AI
     llm/wrapper.py               # LiteLLM + Instructor + runtime config
@@ -222,10 +232,14 @@ app/
       agent_schemas.py           # Tool args, trace (AgentStep/AgentTrace), AgentEstimate
       agent_tools.py             # Flat Responses schemas + search/calculate/validate
       agent_loop.py              # run_estimation_agent (raw Responses API — no LLMWrapper)
-      graph/                     # Session 13 StateGraph (sequential estimation)
+      graph/                     # Session 13 StateGraph + Session 14 supervisor
         state.py                 # EstimationState TypedDict + reducers
         nodes.py                 # Five injectable nodes + Logfire spans
         build.py                 # StateGraph wiring START→…→END
+        supervisor_state.py      # SupervisorState + keyed reducers + HITL helpers (S14)
+        supervisor_privilege.py  # AGENT_PRIVILEGES + guarded_dispatch (S14)
+        supervisor_nodes.py      # SupervisorDeps + router + 4 agents + gate (S14)
+        supervisor_build.py      # Star topology compile (S14)
       boss.py                    # Actor-Critic-Boss orchestration
       critic.py
     conversation/                # Sesiones, compresión, tier resolver
@@ -408,6 +422,16 @@ AGENT_RECOVERY_RELIABILITY_THRESHOLD=0.35
 LANGGRAPH_ENABLED=true
 LOGFIRE_TOKEN=
 LOGFIRE_SERVICE_NAME=estimador-cag
+# Session 14 — supervisor multi-agent
+SUPERVISOR_ENABLED=true
+SUPERVISOR_ROUTER_MODEL=gpt-4o-mini
+SUPERVISOR_MAX_STEPS=8
+SUPERVISOR_CONFIDENCE_THRESHOLD=0.6
+SUPERVISOR_MIN_GROUNDED_RATIO=0.5
+SUPERVISOR_GROUNDING_MAX_DISTANCE=0.55
+SUPERVISOR_OUT_OF_RANGE_FACTOR=2.0
+SUPERVISOR_PRIVILEGE_STRICT=false
+SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS=200
 # Streamlit-only (not loaded by FastAPI Settings)
 STREAMLIT_DEFAULT_HOURLY_RATE_EUR=75
 STREAMLIT_AGENT_AVATAR_MAX_BYTES=2097152
@@ -1081,6 +1105,84 @@ uv run pytest tests/unit/domain/test_graph_estimation.py \
   tests/unit/test_run_agent_s13.py -q
 ```
 
+## Sesión 14 — supervisor multiagente (estrella + privilegio + HITL)
+
+El control flow lo decide el **modelo** (frontera workflow→agéntico). Tres frenos
+deterministas lo enjaulan: presupuesto de pasos, guarda de legalidad y fallback por
+escalera de dependencias. Cada especialista llama tools solo vía `guarded_dispatch`
+(Nivel 3). El gate humano pausa **por señal** (`interrupt()` primero).
+
+### Topología
+
+```text
+START → supervisor ─Command(goto)─▶ {requirements_extractor | budget_searcher |
+                                      estimate_generator | coherence_validator |
+                                      human_review_gate → END}
+agents ─static─▶ supervisor
+```
+
+| Pieza | Ubicación |
+|-------|-----------|
+| Estado + reducers keyed | `app/generation/agentic/graph/supervisor_state.py` |
+| Privilegio + auditoría | `app/generation/agentic/graph/supervisor_privilege.py` |
+| Nodos (DI) | `app/generation/agentic/graph/supervisor_nodes.py` |
+| Cableado estrella | `app/generation/agentic/graph/supervisor_build.py` |
+| Conductor | `app/domain/supervisor_estimation.py` |
+| Router | `app/api/routers/estimate_supervisor.py` |
+| Wizard Streamlit | `streamlit_ui/pages/10_Supervisor.py` |
+
+`thread_id = s14:{estimation_id}` (mismo checkpointer Postgres que S13, namespaces
+aislados). Sin runtime → **503**. Resume sin pausa → **409**. Resume tipado inválido →
+**422**.
+
+Variables de entorno (`.env`):
+
+```bash
+SUPERVISOR_ENABLED=true
+SUPERVISOR_ROUTER_MODEL=gpt-4o-mini
+SUPERVISOR_MAX_STEPS=8
+SUPERVISOR_CONFIDENCE_THRESHOLD=0.6
+SUPERVISOR_MIN_GROUNDED_RATIO=0.5
+SUPERVISOR_GROUNDING_MAX_DISTANCE=0.55
+SUPERVISOR_OUT_OF_RANGE_FACTOR=2.0
+SUPERVISOR_PRIVILEGE_STRICT=false
+SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS=200
+```
+
+CLI (`scripts/run_agent_s14.py`):
+
+```bash
+# Regenerar los tres entregables offline y de forma determinista
+uv run python scripts/run_agent_s14.py --generate-evidence
+
+# Offline (MemorySaver + fallback router)
+uv run python scripts/run_agent_s14.py \
+  exercises/session-14/sample_transcript_happy_path.txt \
+  --memory --stub \
+  --out exercises/session-14/example_run_happy.txt
+
+# Privilege denial demo
+uv run python scripts/run_agent_s14.py \
+  exercises/session-14/sample_transcript_happy_path.txt \
+  --memory --stub --violate
+
+# Live HTTP
+uv run python scripts/run_agent_s14.py \
+  exercises/session-14/sample_transcript_edge_case.txt \
+  --base-url http://localhost:8000 \
+  --api-key "$ESTIMATE_API_KEY" \
+  --decision approve
+```
+
+Tests (offline):
+
+```bash
+uv run pytest tests/unit/generation/agentic/graph/test_supervisor_*.py -q
+uv run pytest tests/unit/domain/test_supervisor_estimation.py \
+  tests/unit/api/test_estimate_supervisor.py \
+  tests/unit/test_streamlit_supervisor_flow.py -q
+```
+
 ## Ejecutar la app de Streamlit
 
 ```bash
@@ -1098,6 +1200,8 @@ La app multipage incluye:
 | **RAG Estimación** | Wizard S12 híbrido (agéntico/determinista) + gate humano + recovery |
 | **Corpus Index** | Stats por colección + expansión incremental (`/embeddings/index/*`) |
 | **Agentes** | Perfiles handwritten (persona, knobs, avatar, default) |
+| **Grafo Agentes** | Wizard S13 multiagente + gates humanos + actividad en vivo |
+| **Supervisor** | Wizard S14: router LLM, trail de enrutado/auditoría, review HITL |
 | **Histórico RAG** | Runs persistentes, restauración y snapshots de perfiles |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 
