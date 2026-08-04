@@ -89,7 +89,23 @@ def test_start_returns_run_state(client, monkeypatch):
     monkeypatch.setattr(
         router,
         "start_supervisor_run",
-        AsyncMock(return_value=_run_state(paused=True)),
+        AsyncMock(
+            return_value=SupervisorRunState(
+                estimation_id="est-1",
+                state="paused",
+                status="awaiting_human_review",
+                pending_review=PendingHumanReview(
+                    estimation_id="est-1",
+                    reasons=["low_confidence"],
+                    confidence=0.3,
+                    threshold=0.6,
+                ),
+                proposals=[],
+                divergence=None,
+                synthesis=None,
+                saved=None,
+            )
+        ),
     )
     response = client.post(
         "/v1/estimate/agent/supervisor", json=BODY, headers=_headers()
@@ -98,6 +114,10 @@ def test_start_returns_run_state(client, monkeypatch):
     body = response.json()
     assert body["status"] == "awaiting_human_review"
     assert body["state"] == "paused"
+    assert body["proposals"] == []
+    assert body["divergence"] is None
+    assert body["synthesis"] is None
+    assert body["saved"] is None
 
 
 def test_start_503_when_runtime_missing(client, monkeypatch):

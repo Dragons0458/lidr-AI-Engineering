@@ -39,6 +39,8 @@ class PendingHumanReview(BaseModel):
     estimate: dict | None = None
     validation: dict | None = None
     risk_flags: list[str] = Field(default_factory=list)
+    divergence: dict | None = None
+    persist_requested: bool = False
 
 
 class SupervisorRunState(BaseModel):
@@ -69,3 +71,8 @@ class SupervisorRunState(BaseModel):
     agent_contributions: list[dict] = Field(default_factory=list)
     privilege_violations: list[dict] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
+
+    proposals: list[dict] = Field(default_factory=list)
+    divergence: dict | None = None
+    synthesis: dict | None = None
+    saved: dict | None = None

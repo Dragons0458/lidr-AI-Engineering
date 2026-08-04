@@ -48,7 +48,10 @@ from app.generation.agentic.agent_schemas import (  # noqa: E402
     AgentStructure,
     AgentTaskNode,
 )
-from app.generation.agentic.graph.supervisor_build import AGENT_NODE_NAMES  # noqa: E402
+from app.generation.agentic.graph.supervisor_build import (  # noqa: E402
+    AGENT_NODE_NAMES,
+    build_supervisor_graph,
+)
 from app.generation.agentic.graph.supervisor_nodes import (  # noqa: E402
     SupervisorDecision,
     SupervisorDeps,
@@ -57,6 +60,14 @@ from app.generation.agentic.graph.supervisor_nodes import (  # noqa: E402
 from app.generation.agentic.graph.supervisor_privilege import (  # noqa: E402
     AGENT_PRIVILEGES,
     guarded_dispatch,
+)
+from app.generation.agentic.graph.schemas import (  # noqa: E402
+    EstimateProposal,
+    SynthesizedEstimate,
+)
+from app.generation.agentic.graph.supervisor_sandbox import (  # noqa: E402
+    PERSISTED,
+    record_intent_sink,
 )
 from app.generation.agentic.graph.supervisor_state import (  # noqa: E402
     SupervisorState,
@@ -87,6 +98,8 @@ class EvidenceCase:
     transcript: Path
     violate: bool = False
     decision: str = "approve"
+    compete: bool = False
+    persist: bool = False
 
 
 EVIDENCE_CASES = (
@@ -96,6 +109,16 @@ EVIDENCE_CASES = (
         "violate",
         EXERCISE_DIR / "sample_transcript_happy_path.txt",
         violate=True,
+    ),
+    EvidenceCase(
+        "competition",
+        EXERCISE_DIR / "sample_transcript_happy_path.txt",
+        compete=True,
+    ),
+    EvidenceCase(
+        "persistence",
+        EXERCISE_DIR / "sample_transcript_happy_path.txt",
+        persist=True,
     ),
 )
 
@@ -133,7 +156,12 @@ def _load_stub_backend():
     return backend
 
 
-def _offline_deps(*, force_review: bool) -> SupervisorDeps:
+def _offline_deps(
+    *,
+    force_review: bool,
+    compete: bool = False,
+    persist: bool = False,
+) -> SupervisorDeps:
     """Deterministic collaborators: no database, model, Redis, or network."""
 
     async def reformulate(_transcript: str) -> EstimationQuery:
@@ -164,6 +192,30 @@ def _offline_deps(*, force_review: bool) -> SupervisorDeps:
     async def empty_backend(_args):
         return []
 
+    async def propose_estimate(stance: str, _brief: str) -> EstimateProposal:
+        # Far-apart totals so divergence is high without a network call.
+        total = 400.0 if stance == "conservative" else 100.0
+        return EstimateProposal(
+            stance=stance,  # type: ignore[arg-type]
+            total_hours=total,
+            assumptions=[f"{stance} offline assumption"],
+            risks=[f"{stance} offline risk"],
+            reasoning=f"offline {stance} proposal",
+        )
+
+    async def synthesize(
+        proposals: list[dict], divergence: dict
+    ) -> SynthesizedEstimate:
+        lows = [float(p["total_hours"]) for p in proposals]
+        return SynthesizedEstimate(
+            low=min(lows) if lows else 0.0,
+            high=max(lows) if lows else 0.0,
+            driving_assumptions=["offline spread"],
+            open_questions=["Is scope closed?"],
+            confidence="low",
+            reasoning="offline range — not an average",
+        )
+
     return SupervisorDeps(
         reformulate=reformulate,
         propose_structure=propose_structure,
@@ -175,10 +227,18 @@ def _offline_deps(*, force_review: bool) -> SupervisorDeps:
         max_steps=8,
         privilege_strict=False,
         grounding_max_distance=0.55,
+        propose_estimate=propose_estimate if compete else None,
+        synthesize=synthesize if compete else None,
+        competition_enabled=compete,
+        divergence_penalty=0.4,
+        persistence_enabled=persist,
+        save_sink=record_intent_sink if persist else None,
     )
 
 
-def _compile(nodes: dict[str, Any], checkpointer: Any):
+def _compile(nodes: dict[str, Any], checkpointer: Any, *, persist: bool = False):
+    # Prefer the production builder so persistence wiring stays identical.
+    # When violate-probe patches nodes we fall back to a local compile.
     builder = StateGraph(SupervisorState)
     builder.add_node(
         "supervisor",
@@ -191,7 +251,12 @@ def _compile(nodes: dict[str, Any], checkpointer: Any):
     builder.add_edge(START, "supervisor")
     for name in AGENT_NODE_NAMES:
         builder.add_edge(name, "supervisor")
-    builder.add_edge("human_review_gate", END)
+    if persist:
+        builder.add_node("persistence_agent", nodes["persistence_agent"])
+        builder.add_edge("human_review_gate", "persistence_agent")
+        builder.add_edge("persistence_agent", END)
+    else:
+        builder.add_edge("human_review_gate", END)
     return builder.compile(checkpointer=checkpointer)
 
 
@@ -226,15 +291,30 @@ async def run_memory_flow(
     estimation_id: str,
     decision: str,
     violate: bool = False,
+    compete: bool = False,
+    persist: bool = False,
 ) -> RunEvidence:
     """Run the complete graph locally and capture any interrupt before resuming."""
+    if persist:
+        PERSISTED.clear()
     risk_flags = detect_review_risks({"transcript": transcript})
-    deps = _offline_deps(force_review=bool(risk_flags))
+    # Empty retrieval only when the transcript itself is exotic (HITL demo).
+    # Persistence alone trips via irreversible_write_pending; competition alone
+    # can trip via high_divergence on an otherwise grounded estimate.
+    force_review = bool(risk_flags) and not persist
+    deps = _offline_deps(
+        force_review=force_review,
+        compete=compete,
+        persist=persist,
+    )
+
     nodes = make_supervisor_nodes(deps)
     if violate:
         _install_privilege_probe(nodes, deps)
+        graph = _compile(nodes, MemorySaver(), persist=False)
+    else:
+        graph = build_supervisor_graph(deps, checkpointer=MemorySaver())
 
-    graph = _compile(nodes, MemorySaver())
     config = {"configurable": {"thread_id": f"s14:{estimation_id}"}}
     await graph.ainvoke(
         {"transcript": transcript, "estimation_id": estimation_id},
@@ -268,6 +348,7 @@ async def run_memory_flow(
             Command(
                 resume={
                     "decision": decision,
+                    "action": decision,
                     "note": "auto-decided by run_agent_s14.py",
                 }
             ),
@@ -338,6 +419,28 @@ def run_http_flow(
     )
 
 
+def _render_competition(state: dict[str, Any]) -> list[str]:
+    lines = ["", "COMPETITION (conservative ↔ aggressive)", "-" * 78]
+    for proposal in state.get("proposals") or []:
+        lines.append(
+            f"  [{proposal.get('stance')}] total = {proposal.get('total_hours')}h"
+        )
+    divergence = state.get("divergence") or {}
+    if divergence:
+        lines.append(
+            f"  divergence: ratio={divergence.get('ratio')} "
+            f"level={divergence.get('level')} spread={divergence.get('spread')}"
+        )
+    synthesis = state.get("synthesis") or {}
+    if synthesis:
+        lines.append(
+            f"  synthesized range: {synthesis.get('low')}..{synthesis.get('high')}h"
+        )
+        for question in synthesis.get("open_questions") or []:
+            lines.append(f"    ? {question}")
+    return lines
+
+
 def render_evidence(evidence: RunEvidence) -> str:
     """Render a stable, human-readable audit artifact."""
     state = evidence.state
@@ -363,13 +466,19 @@ def render_evidence(evidence: RunEvidence) -> str:
 
     lines += ["", "AUDIT TRAIL (agent_contributions)", "-" * 78]
     for row in state.get("agent_contributions") or []:
-        marker = {"ok": "ok", "denied": "DENIED", "error": "ERROR"}.get(
-            row.get("outcome", "?"), "?"
-        )
+        marker = {
+            "ok": "ok",
+            "denied": "DENIED",
+            "error": "ERROR",
+            "deferred": "DEFER",
+        }.get(row.get("outcome", "?"), "?")
         lines.append(
             f"  [{marker:^6}] {row.get('agent', '?'):<24} "
             f"{row.get('action', '?'):<28} {row.get('summary', '')[:60]}"
         )
+
+    if state.get("proposals") or state.get("divergence") or state.get("synthesis"):
+        lines.extend(_render_competition(state))
 
     lines += ["", "HUMAN REVIEW", "-" * 78]
     if evidence.review_triggered:
@@ -394,6 +503,19 @@ def render_evidence(evidence: RunEvidence) -> str:
         hours = component.get("estimated_hours")
         lines.append(f"  {component.get('name', '?'):<40} {hours}h")
     lines.append(f"  {'TOTAL':<40} {estimate.get('total_hours')}h")
+    est_range = estimate.get("range") or {}
+    if est_range:
+        lines.append(
+            f"  RANGE (competition)                    "
+            f"{est_range.get('low')}..{est_range.get('high')}h"
+        )
+    saved = state.get("saved")
+    if saved is not None:
+        persisted = bool(saved.get("ok"))
+        lines.append(
+            f"  persistence = {'persisted' if persisted else 'NOT persisted'} "
+            f"({saved.get('error') or saved.get('summary') or 'ok'})"
+        )
     lines.append(f"  status = {state.get('status')}")
     return "\n".join(lines)
 
@@ -429,6 +551,8 @@ async def generate_evidence(output_dir: Path = EXERCISE_DIR) -> list[Path]:
             estimation_id=f"s14-evidence-{case.name}",
             decision=case.decision,
             violate=case.violate,
+            compete=case.compete,
+            persist=case.persist,
         )
         path = output_dir / f"example_run_{case.name}.txt"
         write_evidence(path, evidence)
@@ -456,6 +580,16 @@ def main(argv: list[str] | None = None) -> int:
         "--stub", action="store_true", help="Use deterministic offline deps"
     )
     parser.add_argument("--violate", action="store_true", help="Demonstrate a denial")
+    parser.add_argument(
+        "--compete",
+        action="store_true",
+        help="Enable conservative/aggressive competition subgraph",
+    )
+    parser.add_argument(
+        "--persist",
+        action="store_true",
+        help="Enable sandboxed persistence_agent after the human gate",
+    )
     parser.add_argument("--base-url", default=None)
     parser.add_argument("--api-key", default=None)
     parser.add_argument("--estimation-id", default=None)
@@ -469,7 +603,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--generate-evidence",
         action="store_true",
-        help="Regenerate happy, edge_case and violate artifacts offline",
+        help="Regenerate happy, edge_case, violate, competition and persistence artifacts",
     )
     parser.add_argument("--evidence-dir", type=Path, default=EXERCISE_DIR)
     args = parser.parse_args(argv)
@@ -493,6 +627,8 @@ def main(argv: list[str] | None = None) -> int:
                 estimation_id=estimation_id,
                 decision=args.decision,
                 violate=args.violate,
+                compete=args.compete,
+                persist=args.persist,
             )
         )
     else:
@@ -500,6 +636,8 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("--stub requires --memory")
         if args.violate:
             parser.error("--violate is only available with --memory --stub")
+        if args.compete or args.persist:
+            parser.error("--compete/--persist require --memory --stub")
         api_key = args.api_key or os.environ.get("ESTIMATE_API_KEY")
         if not api_key:
             parser.error("Provide --api-key or set ESTIMATE_API_KEY")

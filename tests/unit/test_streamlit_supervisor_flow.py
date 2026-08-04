@@ -18,11 +18,50 @@ def test_status_badge_labels():
     assert "Validated" in status_badge_label("validated")
 
 
+def test_confidence_pct_and_competition_helpers():
+    from streamlit_ui.supervisor_flow import (
+        competition_summary,
+        confidence_pct,
+        deferred_rows,
+        irreversible_rows,
+    )
+
+    assert confidence_pct(None) is None
+    assert confidence_pct(0.856) == 86
+    assert competition_summary({}) is None
+    summary = competition_summary(
+        {
+            "divergence": {"spread": 200, "ratio": 1.0, "level": "high"},
+            "synthesis": {
+                "low": 100,
+                "high": 300,
+                "open_questions": ["scope?"],
+            },
+        }
+    )
+    assert summary is not None
+    assert summary["low"] == 100 and summary["high"] == 300
+    assert summary["open_questions"] == ["scope?"]
+    fallback = competition_summary(
+        {"estimate": {"range": {"low": 10, "high": 20}, "open_questions": ["q"]}}
+    )
+    assert fallback is not None
+    assert fallback["low"] == 10
+    contribs = [
+        {"outcome": "deferred", "tool": "save_estimate"},
+        {"outcome": "ok", "tool": "search_budgets"},
+    ]
+    assert len(deferred_rows(contribs)) == 1
+    assert len(irreversible_rows(contribs)) == 1
+
+
 def test_load_sample_transcripts():
     happy = load_sample_transcript("happy_path")
     edge = load_sample_transcript("edge_case")
     assert "proveedores" in happy.lower() or "Portal" in happy
     assert "QKD" in edge or "cuántica" in edge
+    low = load_sample_transcript("low_confidence")
+    assert len(low) >= 100
 
 
 def test_supervisor_start_posts(monkeypatch):

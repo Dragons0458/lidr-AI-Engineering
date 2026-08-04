@@ -126,6 +126,11 @@ class Settings(BaseSettings):
     SUPERVISOR_OUT_OF_RANGE_FACTOR: float = 2.0
     SUPERVISOR_PRIVILEGE_STRICT: bool = False
     SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS: int = 200
+    SUPERVISOR_COMPETITION_ENABLED: bool = False
+    SUPERVISOR_DIVERGENCE_PENALTY: float = Field(default=0.4, ge=0, le=1)
+    SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL: str | None = None  # None → AGENT_MODEL
+    SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL: str | None = None  # None → AGENT_MODEL
+    SUPERVISOR_PERSISTENCE_ENABLED: bool = False
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

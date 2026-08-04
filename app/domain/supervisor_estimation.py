@@ -118,6 +118,8 @@ def snapshot_to_run_state(estimation_id: str, snapshot: Any) -> SupervisorRunSta
             estimate=payload.get("estimate"),
             validation=payload.get("validation"),
             risk_flags=payload.get("risk_flags") or [],
+            divergence=payload.get("divergence"),
+            persist_requested=bool(payload.get("persist_requested")),
         )
 
     status = (
@@ -143,6 +145,10 @@ def snapshot_to_run_state(estimation_id: str, snapshot: Any) -> SupervisorRunSta
         agent_contributions=values.get("agent_contributions") or [],
         privilege_violations=privilege_violations(values),
         errors=values.get("errors") or [],
+        proposals=values.get("proposals") or [],
+        divergence=values.get("divergence"),
+        synthesis=values.get("synthesis"),
+        saved=values.get("saved"),
     )
 
 
@@ -217,6 +223,60 @@ def build_default_supervisor_deps(
         )
         return decision
 
+    from app.generation.agentic.graph.schemas import (
+        EstimateProposal,
+        SynthesizedEstimate,
+    )
+    from app.generation.agentic.graph.supervisor_competition import (
+        _AGGRESSIVE_SYSTEM_PROMPT,
+        _CONSERVATIVE_SYSTEM_PROMPT,
+        _SYNTHESIZER_SYSTEM_PROMPT,
+        _proposal_lines,
+    )
+
+    conservative_model = (
+        settings.SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL or settings.AGENT_MODEL
+    )
+    aggressive_model = (
+        settings.SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL or settings.AGENT_MODEL
+    )
+
+    async def propose_estimate(stance: str, brief: str) -> EstimateProposal:
+        system = (
+            _CONSERVATIVE_SYSTEM_PROMPT
+            if stance == "conservative"
+            else _AGGRESSIVE_SYSTEM_PROMPT
+        )
+        model = conservative_model if stance == "conservative" else aggressive_model
+        proposal, _meta = await asyncio.to_thread(
+            wrapper.complete_structured,
+            system_prompt=system,
+            user_message=brief,
+            response_model=EstimateProposal,
+            model_override=model,
+        )
+        data = proposal.model_dump()
+        data["stance"] = stance
+        return EstimateProposal.model_validate(data)
+
+    async def synthesize(
+        proposals: list[dict], divergence: dict
+    ) -> SynthesizedEstimate:
+        user_message = (
+            f"{_proposal_lines(proposals)}\n\n"
+            f"Arithmetic divergence: spread = {divergence['spread']} hours "
+            f"(low {divergence['low']}, high {divergence['high']}), "
+            f"ratio = {divergence['ratio']} ({divergence['level']})."
+        )
+        synthesis, _meta = await asyncio.to_thread(
+            wrapper.complete_structured,
+            system_prompt=_SYNTHESIZER_SYSTEM_PROMPT,
+            user_message=user_message,
+            response_model=SynthesizedEstimate,
+            model_override=settings.AGENT_MODEL,
+        )
+        return synthesis
+
     return SupervisorDeps(
         reformulate=reformulate,
         propose_structure=propose_structure,
@@ -229,6 +289,12 @@ def build_default_supervisor_deps(
         privilege_strict=settings.SUPERVISOR_PRIVILEGE_STRICT,
         audit_preview_chars=settings.SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS,
         grounding_max_distance=grounding_distance,
+        propose_estimate=propose_estimate,
+        synthesize=synthesize,
+        competition_enabled=bool(settings.SUPERVISOR_COMPETITION_ENABLED),
+        divergence_penalty=float(settings.SUPERVISOR_DIVERGENCE_PENALTY),
+        persistence_enabled=bool(settings.SUPERVISOR_PERSISTENCE_ENABLED),
+        save_sink=None,
     )
 
 

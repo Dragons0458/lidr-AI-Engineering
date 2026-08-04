@@ -510,3 +510,56 @@ def test_history_filters_and_descending_order(tmp_path) -> None:
             status="hours_review", mode="deterministic", db_path=db_path
         )
     ] == [second]
+
+
+def test_supervisor_run_mirror_merge_and_lists(tmp_path) -> None:
+    from streamlit_ui.store import (
+        apply_supervisor_run_state,
+        create_supervisor_run,
+        get_supervisor_run,
+        list_supervisor_runs,
+        list_supervisor_runs_awaiting,
+    )
+
+    db_path = str(tmp_path / "supervisor.db")
+    create_supervisor_run("s1", "transcript one " * 20, db_path=db_path)
+    create_supervisor_run("s2", "transcript two " * 20, db_path=db_path)
+
+    apply_supervisor_run_state(
+        "s1",
+        {
+            "state": "paused",
+            "status": "awaiting_human_review",
+            "pending_review": {"reasons": ["high_divergence"]},
+            "estimate": {"total_hours": 120},
+            "confidence": 0.4,
+            "proposals": [{"stance": "conservative", "total_hours": 200}],
+        },
+        db_path=db_path,
+    )
+    # Second apply must not wipe prior artefacts with None.
+    apply_supervisor_run_state(
+        "s1",
+        {
+            "state": "paused",
+            "status": "awaiting_human_review",
+            "proposals": None,
+            "estimate": None,
+        },
+        db_path=db_path,
+    )
+    row = get_supervisor_run("s1", db_path=db_path)
+    assert row is not None
+    assert row["estimate"]["total_hours"] == 120
+    assert row["proposals"][0]["stance"] == "conservative"
+
+    apply_supervisor_run_state(
+        "s2",
+        {"state": "completed", "status": "validated", "estimate": {"total_hours": 80}},
+        db_path=db_path,
+    )
+    awaiting = list_supervisor_runs_awaiting(db_path=db_path)
+    assert [r["estimation_id"] for r in awaiting] == ["s1"]
+    recent = list_supervisor_runs(limit=10, db_path=db_path)
+    assert recent[0]["estimation_id"] in {"s1", "s2"}
+    assert len(recent) == 2

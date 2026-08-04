@@ -5,6 +5,7 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import structlog
 
 from app.generation.agentic.graph.supervisor_privilege import (
     AGENT_PRIVILEGES,
@@ -54,6 +55,33 @@ async def test_guarded_dispatch_strict_raises():
             step=0,
             privilege_strict=True,
         )
+
+
+@pytest.mark.asyncio
+async def test_guarded_dispatch_redacts_transcript_in_audit_preview():
+    fake = AsyncMock(return_value={"ok": True, "summary": "done", "matches": []})
+    long_transcript = "x" * 120
+    with patch(
+        "app.generation.agentic.graph.supervisor_privilege.dispatch_tool",
+        fake,
+    ):
+        with structlog.testing.capture_logs() as logs:
+            await guarded_dispatch(
+                "budget_searcher",
+                "search_budgets",
+                {"query": "api", "filters": None, "transcript": long_transcript},
+                step=1,
+                estimation_id="e3",
+            )
+    denied_or_ok = [
+        e for e in logs if e["event"] in ("agent_action", "agent_privilege_denied")
+    ]
+    assert denied_or_ok
+    preview = denied_or_ok[0].get("args_preview") or ""
+    # json.dumps may escape the guillemets as \u00ab...\u00bb
+    assert "redacted" in preview
+    assert long_transcript[:20] not in preview
+    assert "secret meeting" not in preview
 
 
 @pytest.mark.asyncio

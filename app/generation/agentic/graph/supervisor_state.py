@@ -105,6 +105,15 @@ class SupervisorState(EstimationState, total=False):
     review_reasons: list[str]
     human_decision: Optional[dict]
 
+    # Session 14 LIVE — competition (single write per run; reducer lives in subgraph).
+    proposals: Optional[list[dict]]
+    divergence: Optional[dict]
+    synthesis: Optional[dict]
+
+    # Session 14 LIVE — sandboxing / persistence.
+    persist_requested: Optional[bool]
+    saved: Optional[dict]
+
 
 def privilege_violations(state: dict[str, Any]) -> list[dict]:
     """Derived read-model: every denied action in the audit trail."""
@@ -302,6 +311,18 @@ def estimate_for_historical_band(
     return {"total_hours": total}
 
 
+def apply_divergence_penalty(
+    confidence: float,
+    divergence: dict | None,
+    penalty: float = 0.4,
+) -> float:
+    """Fold estimator disagreement into the confidence the gate reads."""
+    ratio = float((divergence or {}).get("ratio") or 0.0)
+    if ratio <= 0.0:
+        return confidence
+    return max(0.0, min(1.0, confidence - penalty * min(ratio, 1.0)))
+
+
 def requires_human_review(
     state: dict[str, Any],
     confidence_threshold: float = 0.7,
@@ -309,7 +330,7 @@ def requires_human_review(
     min_grounded_ratio: float = 0.5,
     grounding_max_distance: float = 0.45,
 ) -> tuple[bool, list[str]]:
-    """Pure HITL trigger from grounding, range, validation, and scope risk."""
+    """Pure HITL trigger from grounding, range, validation, scope risk, and S14 signals."""
     reasons: list[str] = []
 
     confidence = state.get("confidence")
@@ -340,6 +361,15 @@ def requires_human_review(
 
     if state.get("risk_flags") or detect_review_risks(state):
         reasons.append("high_risk_scope")
+
+    if (state.get("divergence") or {}).get("level") == "high":
+        reasons.append("high_divergence")
+
+    if state.get("persist_requested"):
+        decision = state.get("human_decision") or {}
+        action = decision.get("decision") or decision.get("action")
+        if action != "approve":
+            reasons.append("irreversible_write_pending")
 
     # Preserve stable order, drop accidental duplicates.
     ordered: list[str] = []

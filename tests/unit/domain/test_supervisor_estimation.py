@@ -62,6 +62,33 @@ def _snapshot(*, paused: bool = False, with_interrupt: bool = False):
     )
 
 
+def test_snapshot_propagates_competition_and_persistence_fields():
+    values = {
+        "estimate": {"total_hours": 10, "components": []},
+        "confidence": 0.4,
+        "requirements": [],
+        "components": [],
+        "budget_matches": [],
+        "validation": {"ok": True, "issues": []},
+        "status": "validated",
+        "routing_history": [],
+        "agent_contributions": [],
+        "errors": [],
+        "proposals": [{"stance": "conservative", "total_hours": 12}],
+        "divergence": {"ratio": 0.1, "level": "low"},
+        "synthesis": {"low": 10, "high": 14},
+        "saved": {"ok": True},
+    }
+    snap = SimpleNamespace(
+        values=values, next=(), interrupts=(), created_at="2026-01-01"
+    )
+    run = snapshot_to_run_state("e1", snap)
+    assert run.proposals[0]["total_hours"] == 12
+    assert run.divergence["level"] == "low"
+    assert run.synthesis["high"] == 14
+    assert run.saved["ok"] is True
+
+
 def test_snapshot_derives_awaiting_human_review():
     run = snapshot_to_run_state("e1", _snapshot(paused=True, with_interrupt=True))
     assert run.status == "awaiting_human_review"

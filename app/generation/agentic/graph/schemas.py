@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 Complexity = Literal["low", "medium", "high"]
 
@@ -71,3 +71,62 @@ class CommercialProposal(BaseModel):
     body_markdown: str = Field(
         description="Full proposal as Markdown, grounded in the validated estimate."
     )
+
+
+# --------------------------------------------------------------------------- #
+# Session 14 LIVE — competition schemas (hours, not engineer-days)            #
+# --------------------------------------------------------------------------- #
+
+Stance = Literal["conservative", "aggressive"]
+
+
+class EstimateProposal(BaseModel):
+    """One competing estimate produced from a single stance."""
+
+    stance: Stance = Field(description="Which estimator produced this proposal.")
+    total_hours: float = Field(
+        ge=0, description="This stance's headline effort in hours."
+    )
+    assumptions: list[str] = Field(
+        default_factory=list,
+        description="The load-bearing assumptions this number rests on.",
+    )
+    risks: list[str] = Field(
+        default_factory=list,
+        description="What could make the real effort diverge from this number.",
+    )
+    reasoning: str = Field(description="One paragraph: how the number was reached.")
+
+
+class SynthesizedEstimate(BaseModel):
+    """The synthesizer's output: a RANGE in hours, never an average."""
+
+    low: float = Field(ge=0, description="Lower bound of the estimate range (hours).")
+    high: float = Field(ge=0, description="Upper bound of the estimate range (hours).")
+    driving_assumptions: list[str] = Field(
+        default_factory=list,
+        description="The assumptions that most move the number between low and high.",
+    )
+    open_questions: list[str] = Field(
+        default_factory=list,
+        description="Questions whose answers would narrow the range.",
+    )
+    confidence: Literal["low", "medium", "high"] = Field(
+        default="medium", description="Confidence in the range as a whole."
+    )
+    reasoning: str = Field(
+        description="Short prose on how the bracket was set — explicitly NOT an average."
+    )
+
+    @model_validator(mode="after")
+    def _order_bounds(self) -> SynthesizedEstimate:
+        if self.high < self.low:
+            import structlog
+
+            structlog.get_logger().warning(
+                "synthesized_estimate_bounds_swapped",
+                low=self.low,
+                high=self.high,
+            )
+            self.low, self.high = self.high, self.low
+        return self

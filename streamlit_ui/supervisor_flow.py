@@ -13,10 +13,17 @@ SUPERVISOR_PREFIX = "/v1/estimate/agent/supervisor"
 
 EXERCISES = Path(__file__).resolve().parent.parent / "exercises" / "session-14"
 
+_EDGE_CASE_NAMES = frozenset(
+    {"low_confidence", "no_precedent", "out_of_historical_range"}
+)
+
 
 def load_sample_transcript(name: str) -> str:
-    """Load a committed sample transcript by short name (``happy_path`` / ``edge_case``)."""
-    path = EXERCISES / f"sample_transcript_{name}.txt"
+    """Load a sample transcript by short name or edge-case signal name."""
+    if name in _EDGE_CASE_NAMES:
+        path = EXERCISES / "edge_cases" / f"{name}.txt"
+    else:
+        path = EXERCISES / f"sample_transcript_{name}.txt"
     return path.read_text(encoding="utf-8")
 
 
@@ -98,3 +105,49 @@ def status_badge_label(status: str | None) -> str:
         "needs_review": "⚠ Completed with warnings",
         "rejected": "⛔ Rejected",
     }.get(status or "", status or "unknown")
+
+
+def confidence_pct(value: float | None) -> int | None:
+    """Nil-safe confidence as an integer percentage."""
+    if value is None:
+        return None
+    try:
+        return int(round(float(value) * 100))
+    except (TypeError, ValueError):
+        return None
+
+
+def deferred_rows(contributions: list[dict] | None) -> list[dict]:
+    return [row for row in (contributions or []) if row.get("outcome") == "deferred"]
+
+
+def irreversible_rows(contributions: list[dict] | None) -> list[dict]:
+    return [row for row in (contributions or []) if row.get("tool") == "save_estimate"]
+
+
+def competition_summary(state: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Derive a compact competition block from divergence + synthesis / range."""
+    if not state:
+        return None
+    divergence = state.get("divergence") or {}
+    synthesis = state.get("synthesis") or {}
+    estimate = state.get("estimate") or {}
+    est_range = estimate.get("range") or {}
+    low = synthesis.get("low")
+    high = synthesis.get("high")
+    if low is None:
+        low = est_range.get("low")
+    if high is None:
+        high = est_range.get("high")
+    if low is None and high is None and not divergence:
+        return None
+    return {
+        "low": low,
+        "high": high,
+        "spread": divergence.get("spread"),
+        "ratio": divergence.get("ratio"),
+        "level": divergence.get("level"),
+        "open_questions": list(
+            synthesis.get("open_questions") or estimate.get("open_questions") or []
+        ),
+    }

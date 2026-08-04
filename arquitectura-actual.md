@@ -485,3 +485,23 @@ techo de calidad lo fija qué cubre el corpus. El trace lo muestra:
 fidelización y email de confirmación no están en los presupuestos históricos.
 La política de "contexto insuficiente" evita que el sistema invente una
 estimación para necesidades que sus datos no respaldan.
+
+---
+
+## Anexo — Sesión 14 LIVE (supervisor: competición + sandbox)
+
+Topología en estrella con pata de persistencia opcional y subgrafo de competición:
+
+```text
+START → supervisor ─Command(goto)─▶ specialists / human_review_gate
+specialists ─static─▶ supervisor
+human_review_gate → persistence_agent → END   # si SUPERVISOR_PERSISTENCE_ENABLED
+
+estimate_generator ─(opcional)─▶ competition subgraph
+  START ─┬─▶ conservative_estimator ─┐
+         └─▶ aggressive_estimator ───┴─▶ synthesizer → END
+```
+
+- Competición: `supervisor_competition.py` (DI vía `SupervisorDeps`, horas).
+- Sandbox: `supervisor_sandbox.py` (grants + riesgo + tenencia + diferido).
+- Flags off por defecto; el camino de referencia no cambia.

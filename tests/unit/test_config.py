@@ -47,3 +47,44 @@ def test_session12_agent_recovery_defaults(monkeypatch) -> None:
     )
     assert settings.AGENT_SEARCH_DISTANCE_THRESHOLD == 0.45
     assert settings.AGENT_RECOVERY_RELIABILITY_THRESHOLD == 0.35
+
+
+def test_session14_competition_and_persistence_defaults(monkeypatch) -> None:
+    for env_name in (
+        "SUPERVISOR_COMPETITION_ENABLED",
+        "SUPERVISOR_DIVERGENCE_PENALTY",
+        "SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL",
+        "SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL",
+        "SUPERVISOR_PERSISTENCE_ENABLED",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
+    settings = Settings(
+        _env_file=None,
+        OPENAI_API_KEY="test",
+        LLM_PROVIDER="openai",
+    )
+    assert settings.SUPERVISOR_COMPETITION_ENABLED is False
+    assert settings.SUPERVISOR_DIVERGENCE_PENALTY == 0.4
+    assert settings.SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL is None
+    assert settings.SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL is None
+    assert settings.SUPERVISOR_PERSISTENCE_ENABLED is False
+
+
+def test_session14_divergence_penalty_out_of_range_raises() -> None:
+    import pytest
+    from pydantic import ValidationError
+
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            OPENAI_API_KEY="test",
+            LLM_PROVIDER="openai",
+            SUPERVISOR_DIVERGENCE_PENALTY=1.5,
+        )
+    with pytest.raises(ValidationError):
+        Settings(
+            _env_file=None,
+            OPENAI_API_KEY="test",
+            LLM_PROVIDER="openai",
+            SUPERVISOR_DIVERGENCE_PENALTY=-0.1,
+        )

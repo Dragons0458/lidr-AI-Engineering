@@ -200,6 +200,37 @@ async def test_coherence_validator_publishes_facts():
 
 
 @pytest.mark.asyncio
+async def test_estimate_generator_skips_competition_when_disabled():
+    nodes = make_supervisor_nodes(_deps(competition_enabled=False))
+    state = {
+        "estimation_id": "e1",
+        "supervisor_steps": 3,
+        "components": [
+            {
+                "component_id": "c1",
+                "name": "API",
+                "category": "Backend",
+                "description": "",
+            }
+        ],
+        "budget_matches": [
+            {
+                "component_id": "c1",
+                "chunk_id": 1,
+                "reference_budget_id": "b1",
+                "amount": 40.0,
+                "distance": 0.1,
+            }
+        ],
+        "search_completed": True,
+    }
+    update = await nodes["estimate_generator"](state)
+    assert update["estimate"]["total_hours"] > 0
+    assert not update.get("proposals")
+    assert not update.get("divergence")
+
+
+@pytest.mark.asyncio
 async def test_human_review_gate_skips_when_signals_clear():
     nodes = make_supervisor_nodes(_deps(confidence_threshold=0.1))
     state = {

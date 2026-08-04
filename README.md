@@ -152,16 +152,19 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
 - **Sesión 14**: supervisor multiagente en topología **estrella** (`StateGraph` +
   `Command`): el modelo decide el enrutado; tres frenos deterministas (presupuesto
   de pasos, legalidad, fallback); privilegio exigible (`guarded_dispatch`) +
-  auditoría; gate HITL por señal (`interrupt()`). API bajo
-  `/v1/estimate/agent/supervisor` (thread `s14:{id}`); Wizard Streamlit
-  `pages/10_Supervisor.py`.
+  auditoría; gate HITL por señal (`interrupt()`). **LIVE**: competición
+  conservador/agresivo + divergencia determinista + sintetizador de rango;
+  sandboxing de escritura (`save_estimate` irreversible, tenencia, diferido).
+  API bajo `/v1/estimate/agent/supervisor` (thread `s14:{id}`); Wizard Streamlit
+  `pages/10_Supervisor.py` con bandeja de revisión.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
   RAG Estimación (wizard S12), Agentes, Grafo Agentes (wizard S13), Supervisor
   (wizard S14), Histórico RAG, Corpus Index y Ajustes IA;
   persistencia SQLite (`estimations`, `chat_sessions`, `chunking_comparisons`,
-  `agent_profiles`, `rag_estimation_runs`, `graph_estimation_runs`).
+  `agent_profiles`, `rag_estimation_runs`, `graph_estimation_runs`,
+  `supervisor_estimation_runs`).
 - Pruebas de renderizado de prompts con `pytest`.
 
 ## Stack tecnológico
@@ -237,9 +240,11 @@ app/
         nodes.py                 # Five injectable nodes + Logfire spans
         build.py                 # StateGraph wiring START→…→END
         supervisor_state.py      # SupervisorState + keyed reducers + HITL helpers (S14)
-        supervisor_privilege.py  # AGENT_PRIVILEGES + guarded_dispatch (S14)
-        supervisor_nodes.py      # SupervisorDeps + router + 4 agents + gate (S14)
-        supervisor_build.py      # Star topology compile (S14)
+        supervisor_privilege.py  # AGENT_PRIVILEGES + guarded_dispatch + redact_args (S14)
+        supervisor_sandbox.py    # ToolRisk + grants + guard_action + execute_guarded (S14 LIVE)
+        supervisor_competition.py # Fan-out estimators + compute_divergence (S14 LIVE)
+        supervisor_nodes.py      # SupervisorDeps + router + 4 agents + gate + persistence (S14)
+        supervisor_build.py      # Star topology compile (+ optional persistence leg) (S14)
       boss.py                    # Actor-Critic-Boss orchestration
       critic.py
     conversation/                # Sesiones, compresión, tier resolver
@@ -1117,14 +1122,20 @@ escalera de dependencias. Cada especialista llama tools solo vía `guarded_dispa
 ```text
 START → supervisor ─Command(goto)─▶ {requirements_extractor | budget_searcher |
                                       estimate_generator | coherence_validator |
-                                      human_review_gate → END}
+                                      human_review_gate → [persistence_agent] → END}
 agents ─static─▶ supervisor
+
+estimate_generator ─(opcional)─▶ subgraph competición:
+  START ─┬─▶ conservative_estimator ─┐
+         └─▶ aggressive_estimator ───┴─▶ synthesizer → END
 ```
 
 | Pieza | Ubicación |
 |-------|-----------|
 | Estado + reducers keyed | `app/generation/agentic/graph/supervisor_state.py` |
 | Privilegio + auditoría | `app/generation/agentic/graph/supervisor_privilege.py` |
+| Sandbox de escritura | `app/generation/agentic/graph/supervisor_sandbox.py` |
+| Competición / divergencia | `app/generation/agentic/graph/supervisor_competition.py` |
 | Nodos (DI) | `app/generation/agentic/graph/supervisor_nodes.py` |
 | Cableado estrella | `app/generation/agentic/graph/supervisor_build.py` |
 | Conductor | `app/domain/supervisor_estimation.py` |
@@ -1134,6 +1145,16 @@ agents ─static─▶ supervisor
 `thread_id = s14:{estimation_id}` (mismo checkpointer Postgres que S13, namespaces
 aislados). Sin runtime → **503**. Resume sin pausa → **409**. Resume tipado inválido →
 **422**.
+
+### Capacidades LIVE (off por defecto)
+
+1. **Competición** (`SUPERVISOR_COMPETITION_ENABLED`): dos estimadores con criterios
+   sustantivos distintos + sintetizador que devuelve un **rango en horas** (nunca la
+   media). `compute_divergence` es aritmética pura; `apply_divergence_penalty` puede
+   disparar `high_divergence` / `low_confidence` en el gate.
+2. **Sandboxing de escritura** (`SUPERVISOR_PERSISTENCE_ENABLED`): `persistence_agent`
+   tras el gate; `save_estimate` es `IRREVERSIBLE`; sin aprobación humana queda
+   `deferred`; tenencia por `estimation_id`; sink inyectable (default no-op).
 
 Variables de entorno (`.env`):
 
@@ -1147,12 +1168,17 @@ SUPERVISOR_GROUNDING_MAX_DISTANCE=0.55
 SUPERVISOR_OUT_OF_RANGE_FACTOR=2.0
 SUPERVISOR_PRIVILEGE_STRICT=false
 SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS=200
+SUPERVISOR_COMPETITION_ENABLED=false
+SUPERVISOR_DIVERGENCE_PENALTY=0.4
+SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL=
+SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL=
+SUPERVISOR_PERSISTENCE_ENABLED=false
 ```
 
 CLI (`scripts/run_agent_s14.py`):
 
 ```bash
-# Regenerar los tres entregables offline y de forma determinista
+# Regenerar los cinco entregables offline y de forma determinista
 uv run python scripts/run_agent_s14.py --generate-evidence
 
 # Offline (MemorySaver + fallback router)
@@ -1165,6 +1191,15 @@ uv run python scripts/run_agent_s14.py \
 uv run python scripts/run_agent_s14.py \
   exercises/session-14/sample_transcript_happy_path.txt \
   --memory --stub --violate
+
+# Competition + persistence demos
+uv run python scripts/run_agent_s14.py \
+  exercises/session-14/sample_transcript_happy_path.txt \
+  --memory --stub --compete --decision approve
+
+uv run python scripts/run_agent_s14.py \
+  exercises/session-14/sample_transcript_happy_path.txt \
+  --memory --stub --persist --decision approve
 
 # Live HTTP
 uv run python scripts/run_agent_s14.py \
@@ -1180,7 +1215,9 @@ Tests (offline):
 uv run pytest tests/unit/generation/agentic/graph/test_supervisor_*.py -q
 uv run pytest tests/unit/domain/test_supervisor_estimation.py \
   tests/unit/api/test_estimate_supervisor.py \
-  tests/unit/test_streamlit_supervisor_flow.py -q
+  tests/unit/test_streamlit_supervisor_flow.py \
+  tests/unit/test_streamlit_store.py \
+  tests/unit/test_run_agent_s14.py -q
 ```
 
 ## Ejecutar la app de Streamlit
@@ -1201,12 +1238,13 @@ La app multipage incluye:
 | **Corpus Index** | Stats por colección + expansión incremental (`/embeddings/index/*`) |
 | **Agentes** | Perfiles handwritten (persona, knobs, avatar, default) |
 | **Grafo Agentes** | Wizard S13 multiagente + gates humanos + actividad en vivo |
-| **Supervisor** | Wizard S14: router LLM, trail de enrutado/auditoría, review HITL |
+| **Supervisor** | Wizard S14: bandeja, router LLM, competición, sandbox, review HITL |
 | **Histórico RAG** | Runs persistentes, restauración y snapshots de perfiles |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 
 Persistencia local en SQLite (`STREAMLIT_DB_PATH`, default `streamlit_ui/data/frontend.db`):
-estimaciones, chats, comparaciones, `agent_profiles` y `rag_estimation_runs`.
+estimaciones, chats, comparaciones, `agent_profiles`, `rag_estimation_runs`,
+`graph_estimation_runs` y `supervisor_estimation_runs`.
 En Docker Compose el volumen `./streamlit_ui` conserva el histórico al recrear el contenedor.
 
 Variables de entorno del frontend:

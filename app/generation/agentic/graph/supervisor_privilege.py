@@ -58,8 +58,26 @@ def _digest(args: dict[str, Any]) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:12]
 
 
+_SENSITIVE_KEYS = frozenset(
+    {"transcript", "note", "content", "body", "reasoning", "summary"}
+)
+
+
+def redact_args(args: dict[str, Any], *, limit: int = 80) -> dict[str, Any]:
+    """Mask sensitive values and truncate long strings for audit previews."""
+    redacted: dict[str, Any] = {}
+    for key, value in args.items():
+        if key in _SENSITIVE_KEYS:
+            redacted[key] = "«redacted»"
+        elif isinstance(value, str) and len(value) > limit:
+            redacted[key] = value[: max(0, limit - 1)] + "…"
+        else:
+            redacted[key] = value
+    return redacted
+
+
 def _preview(args: dict[str, Any], *, limit: int) -> str:
-    return json.dumps(args, sort_keys=True, default=str)[:limit]
+    return json.dumps(redact_args(args), sort_keys=True, default=str)[:limit]
 
 
 async def _unused_backend(_args: Any) -> list[dict[str, Any]]:

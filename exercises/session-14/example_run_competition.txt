@@ -1,0 +1,56 @@
+==============================================================================
+SESSION 14 — SUPERVISOR MULTI-AGENT RUN
+==============================================================================
+
+estimation_id = s14-evidence-competition
+
+ROUTING (supervisor decisions)
+------------------------------------------------------------------------------
+  1. supervisor → requirements_extractor   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  2. supervisor → budget_searcher          [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  3. supervisor → estimate_generator       [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  4. supervisor → coherence_validator      [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  5. supervisor → finish                   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+
+TOOL PRIVILEGE (declared allowlists)
+------------------------------------------------------------------------------
+  supervisor               : (no tools)
+  requirements_extractor   : (no tools)
+  budget_searcher          : search_budgets
+  estimate_generator       : calculate_estimate
+  coherence_validator      : validate_estimate
+
+AUDIT TRAIL (agent_contributions)
+------------------------------------------------------------------------------
+  [  ok  ] requirements_extractor   extract_requirements         3 requirements extracted
+  [  ok  ] requirements_extractor   propose_structure            2 components classified
+  [  ok  ] budget_searcher          tool:search_budgets          3 historical items for 'Module: Core\nTask: Auth\nlogin'; ho
+  [  ok  ] budget_searcher          tool:search_budgets          2 historical items for 'Module: Core\nTask: API\nREST backen
+  [  ok  ] estimate_generator       tool:calculate_estimate      total=1684.8h across 2 components
+  [  ok  ] estimate_generator       competition_aggressive       aggressive total = 100.0h
+  [  ok  ] estimate_generator       competition_conservative     conservative total = 400.0h
+  [  ok  ] estimate_generator       competition_synthesis        range 100.0..400.0h, divergence 1.2 (high)
+  [  ok  ] coherence_validator      tool:validate_estimate       estimate passed all guardrails
+  [  ok  ] human                    review_decision              human approve: auto-decided by run_agent_s14.py
+
+COMPETITION (conservative ↔ aggressive)
+------------------------------------------------------------------------------
+  [aggressive] total = 100.0h
+  [conservative] total = 400.0h
+  divergence: ratio=1.2 level=high spread=300.0
+  synthesized range: 100.0..400.0h
+    ? Is scope closed?
+
+HUMAN REVIEW
+------------------------------------------------------------------------------
+  triggered: YES
+    - high_divergence
+  decision : approve
+
+ESTIMATE
+------------------------------------------------------------------------------
+  Auth                                     483.0h
+  API                                      1201.8h
+  TOTAL                                    1684.8h
+  RANGE (competition)                    100.0..400.0h
+  status = validated

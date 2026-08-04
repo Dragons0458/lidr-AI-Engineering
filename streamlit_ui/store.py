@@ -166,6 +166,37 @@ def init_schema(conn: sqlite3.Connection) -> None:
 
         CREATE INDEX IF NOT EXISTS idx_graph_runs_updated
             ON graph_estimation_runs(updated_at DESC);
+
+        CREATE TABLE IF NOT EXISTS supervisor_estimation_runs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            estimation_id TEXT NOT NULL UNIQUE,
+            transcript TEXT NOT NULL,
+            run_state TEXT,
+            status TEXT,
+            pending_review TEXT,
+            estimate TEXT,
+            validation TEXT,
+            requirements TEXT,
+            components TEXT,
+            budget_matches TEXT,
+            routing_history TEXT,
+            agent_contributions TEXT,
+            privilege_violations TEXT,
+            proposals TEXT,
+            divergence TEXT,
+            synthesis TEXT,
+            saved TEXT,
+            human_decision TEXT,
+            errors_list TEXT,
+            confidence REAL,
+            total_hours REAL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        );
+        CREATE INDEX IF NOT EXISTS idx_supervisor_runs_updated
+            ON supervisor_estimation_runs(updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_supervisor_runs_state_status
+            ON supervisor_estimation_runs(run_state, status);
         """
     )
     conn.commit()
@@ -1124,3 +1155,194 @@ def list_graph_estimation_runs(
         .fetchall()
     )
     return [record for row in rows if (record := _graph_run_record(row)) is not None]
+
+
+_SUPERVISOR_RUN_JSON_COLUMNS = frozenset(
+    {
+        "pending_review",
+        "estimate",
+        "validation",
+        "requirements",
+        "components",
+        "budget_matches",
+        "routing_history",
+        "agent_contributions",
+        "privilege_violations",
+        "proposals",
+        "divergence",
+        "synthesis",
+        "saved",
+        "human_decision",
+        "errors_list",
+    }
+)
+
+
+def _supervisor_run_record(row: sqlite3.Row | None) -> dict[str, Any] | None:
+    if row is None:
+        return None
+    item = _row_to_dict(row)
+    for column in _SUPERVISOR_RUN_JSON_COLUMNS:
+        if column in item:
+            item[column] = _parse_json_column(item[column])
+    return item
+
+
+def create_supervisor_run(
+    estimation_id: str,
+    transcript: str,
+    *,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Insert a supervisor run before calling the service (preserve transcript)."""
+    now = _utc_now()
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            """
+            INSERT INTO supervisor_estimation_runs
+                (estimation_id, transcript, run_state, status, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            """,
+            (estimation_id, transcript, None, None, now, now),
+        )
+    record = get_supervisor_run(estimation_id, db_path=db_path)
+    assert record is not None
+    return record
+
+
+def apply_supervisor_run_state(
+    estimation_id: str,
+    payload: dict[str, Any],
+    *,
+    db_path: str | None = None,
+) -> dict[str, Any]:
+    """Merge API payload into the mirrored row; never overwrite with None."""
+    existing = get_supervisor_run(estimation_id, db_path=db_path) or {}
+    estimate = payload.get("estimate")
+    if estimate is None:
+        estimate = existing.get("estimate")
+    total_hours = None
+    if isinstance(estimate, dict):
+        total_hours = estimate.get("total_hours")
+    elif existing.get("total_hours") is not None:
+        total_hours = existing.get("total_hours")
+
+    merged = {
+        "run_state": payload.get("state") or existing.get("run_state"),
+        "status": payload.get("status") or existing.get("status"),
+        "pending_review": payload.get("pending_review")
+        if payload.get("pending_review") is not None
+        else existing.get("pending_review"),
+        "estimate": estimate,
+        "validation": payload.get("validation")
+        if payload.get("validation") is not None
+        else existing.get("validation"),
+        "requirements": payload.get("requirements")
+        if payload.get("requirements") is not None
+        else existing.get("requirements"),
+        "components": payload.get("components")
+        if payload.get("components") is not None
+        else existing.get("components"),
+        "budget_matches": payload.get("budget_matches")
+        if payload.get("budget_matches") is not None
+        else existing.get("budget_matches"),
+        "routing_history": payload.get("routing_history")
+        if payload.get("routing_history") is not None
+        else existing.get("routing_history"),
+        "agent_contributions": payload.get("agent_contributions")
+        if payload.get("agent_contributions") is not None
+        else existing.get("agent_contributions"),
+        "privilege_violations": payload.get("privilege_violations")
+        if payload.get("privilege_violations") is not None
+        else existing.get("privilege_violations"),
+        "proposals": payload.get("proposals")
+        if payload.get("proposals") is not None
+        else existing.get("proposals"),
+        "divergence": payload.get("divergence")
+        if payload.get("divergence") is not None
+        else existing.get("divergence"),
+        "synthesis": payload.get("synthesis")
+        if payload.get("synthesis") is not None
+        else existing.get("synthesis"),
+        "saved": payload.get("saved")
+        if payload.get("saved") is not None
+        else existing.get("saved"),
+        "human_decision": payload.get("human_decision")
+        if payload.get("human_decision") is not None
+        else existing.get("human_decision"),
+        "errors_list": payload.get("errors")
+        if payload.get("errors") is not None
+        else existing.get("errors_list"),
+        "confidence": payload.get("confidence")
+        if payload.get("confidence") is not None
+        else existing.get("confidence"),
+        "total_hours": total_hours,
+    }
+
+    assignments = [f"{key} = ?" for key in merged]
+    values = [
+        _json_dump(value) if key in _SUPERVISOR_RUN_JSON_COLUMNS else value
+        for key, value in merged.items()
+    ]
+    assignments.append("updated_at = ?")
+    values.extend([_utc_now(), estimation_id])
+    conn = get_connection(db_path)
+    with conn:
+        conn.execute(
+            f"UPDATE supervisor_estimation_runs SET {', '.join(assignments)} "
+            f"WHERE estimation_id = ?",
+            values,
+        )
+    record = get_supervisor_run(estimation_id, db_path=db_path)
+    assert record is not None
+    return record
+
+
+def get_supervisor_run(
+    estimation_id: str, *, db_path: str | None = None
+) -> dict[str, Any] | None:
+    row = (
+        get_connection(db_path)
+        .execute(
+            "SELECT * FROM supervisor_estimation_runs WHERE estimation_id = ?",
+            (estimation_id,),
+        )
+        .fetchone()
+    )
+    return _supervisor_run_record(row)
+
+
+def list_supervisor_runs(
+    *, limit: int = 20, db_path: str | None = None
+) -> list[dict[str, Any]]:
+    rows = (
+        get_connection(db_path)
+        .execute(
+            "SELECT * FROM supervisor_estimation_runs ORDER BY updated_at DESC LIMIT ?",
+            (limit,),
+        )
+        .fetchall()
+    )
+    return [
+        record for row in rows if (record := _supervisor_run_record(row)) is not None
+    ]
+
+
+def list_supervisor_runs_awaiting(
+    *, limit: int = 50, db_path: str | None = None
+) -> list[dict[str, Any]]:
+    """Oldest awaiting review first — longest wait is most urgent."""
+    rows = (
+        get_connection(db_path)
+        .execute(
+            "SELECT * FROM supervisor_estimation_runs "
+            "WHERE status = 'awaiting_human_review' "
+            "ORDER BY created_at ASC LIMIT ?",
+            (limit,),
+        )
+        .fetchall()
+    )
+    return [
+        record for row in rows if (record := _supervisor_run_record(row)) is not None
+    ]

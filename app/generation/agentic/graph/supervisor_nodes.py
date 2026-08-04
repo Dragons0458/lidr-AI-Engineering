@@ -33,8 +33,14 @@ from app.generation.agentic.graph.supervisor_privilege import (
     guarded_dispatch,
     record_model_action,
 )
+from app.generation.agentic.graph.supervisor_sandbox import (
+    ActionRequest,
+    SaveSink,
+    execute_guarded,
+)
 from app.generation.agentic.graph.supervisor_state import (
     SupervisorState,
+    apply_divergence_penalty,
     apply_human_decision,
     build_state_digest,
     compute_confidence,
@@ -74,11 +80,13 @@ class SupervisorDecision(BaseModel):
 
 
 RouteFn = Callable[[str], Awaitable[SupervisorDecision]]
+ProposeFn = Callable[[str, str], Awaitable[Any]]
+SynthesizeFn = Callable[[list[dict], dict], Awaitable[Any]]
 
 
 @dataclass(frozen=True)
 class SupervisorDeps:
-    """Injectable collaborators for the six supervisor-graph callables."""
+    """Injectable collaborators for the supervisor-graph callables."""
 
     reformulate: ReformulateFn
     propose_structure: StructureFn
@@ -91,6 +99,12 @@ class SupervisorDeps:
     privilege_strict: bool
     audit_preview_chars: int = 200
     grounding_max_distance: float = 0.45
+    propose_estimate: ProposeFn | None = None
+    synthesize: SynthesizeFn | None = None
+    competition_enabled: bool = False
+    divergence_penalty: float = 0.4
+    persistence_enabled: bool = False
+    save_sink: SaveSink | None = None
 
 
 def _step_of(state: SupervisorState) -> int:
@@ -151,7 +165,15 @@ def _confidence_label(budgeted: int, total: int) -> str:
 
 
 def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]:
-    """Build the six node callables closed over ``deps``."""
+    """Build the node callables closed over ``deps``."""
+
+    competition_graph = None
+    if deps.competition_enabled and deps.propose_estimate and deps.synthesize:
+        from app.generation.agentic.graph.supervisor_competition import (
+            build_competition_subgraph,
+        )
+
+        competition_graph = build_competition_subgraph(deps)
 
     async def supervisor(state: SupervisorState) -> Command:
         step = _step_of(state)
@@ -423,11 +445,86 @@ def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]
                 assumptions=assumptions,
                 confidence=_confidence_label(budgeted, len(components)),
             )
-            return {
+            update: dict[str, Any] = {
                 "estimate": draft.model_dump(mode="json"),
                 "component_anchors": anchors,
                 "agent_contributions": [contribution],
             }
+
+            if (
+                competition_graph is not None
+                and deps.competition_enabled
+                and deps.propose_estimate
+                and deps.synthesize
+            ):
+                from app.generation.agentic.graph.supervisor_competition import (
+                    build_competition_brief,
+                    compute_divergence,
+                )
+
+                try:
+                    brief = build_competition_brief(state, update["estimate"])
+                    sub = await competition_graph.ainvoke({"brief": brief})
+                    proposals = sub.get("proposals") or []
+                    divergence = sub.get("divergence") or compute_divergence(proposals)
+                    synthesis = sub.get("synthesis") or {}
+
+                    estimate = dict(update["estimate"])
+                    if synthesis:
+                        estimate["range"] = {
+                            "low": synthesis.get("low"),
+                            "high": synthesis.get("high"),
+                        }
+                        estimate["open_questions"] = (
+                            synthesis.get("open_questions") or []
+                        )
+
+                    contributions = list(update["agent_contributions"])
+                    for proposal in proposals:
+                        contributions.append(
+                            record_model_action(
+                                "estimate_generator",
+                                f"competition_{proposal.get('stance')}",
+                                step=step,
+                                estimation_id=estimation_id,
+                                summary=(
+                                    f"{proposal.get('stance')} total = "
+                                    f"{proposal.get('total_hours')}h"
+                                ),
+                            )
+                        )
+                    contributions.append(
+                        record_model_action(
+                            "estimate_generator",
+                            "competition_synthesis",
+                            step=step,
+                            estimation_id=estimation_id,
+                            summary=(
+                                f"range {synthesis.get('low')}.."
+                                f"{synthesis.get('high')}h, "
+                                f"divergence {divergence.get('ratio')} "
+                                f"({divergence.get('level')})"
+                            ),
+                        )
+                    )
+                    update.update(
+                        {
+                            "estimate": estimate,
+                            "proposals": proposals,
+                            "divergence": divergence,
+                            "synthesis": synthesis,
+                            "agent_contributions": contributions,
+                        }
+                    )
+                except Exception as exc:  # noqa: BLE001 — competition never kills the run
+                    log.error(
+                        "competition_subgraph_failed",
+                        error_type=type(exc).__name__,
+                        estimation_id=estimation_id,
+                    )
+                    update["errors"] = [f"competition failed: {type(exc).__name__}"]
+
+            return update
 
     async def coherence_validator(state: SupervisorState) -> dict[str, Any]:
         with logfire.span("agent: coherence_validator"):
@@ -491,6 +588,11 @@ def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]
                 provisional,
                 grounding_max_distance=deps.grounding_max_distance,
             )
+            confidence = apply_divergence_penalty(
+                confidence,
+                state.get("divergence"),
+                penalty=deps.divergence_penalty,
+            )
             near = precedent_matches(matches, max_distance=deps.grounding_max_distance)
             matched_ids = {m.get("component_id") for m in near if m.get("component_id")}
             grounded = sum(
@@ -515,9 +617,55 @@ def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]
                 "status": status,
                 "agent_contributions": [contribution],
             }
+            if deps.persistence_enabled:
+                update["persist_requested"] = True
+                # Record the irreversible intent now (deferred — no human approval yet).
+                # The terminal persistence_agent re-runs after the gate authorises it.
+                _envelope, deferred = await execute_guarded(
+                    ActionRequest(
+                        agent="persistence_agent",
+                        tool="save_estimate",
+                        args={
+                            "estimation_id": estimation_id,
+                            "estimate": estimate,
+                        },
+                        estimation_id=estimation_id,
+                        step=step,
+                    ),
+                    {**state, **update},
+                    sink=deps.save_sink,
+                    audit_preview_chars=deps.audit_preview_chars,
+                )
+                update["agent_contributions"] = [contribution, deferred]
             if validation["issues"]:
                 update["errors"] = list(validation["issues"])
             return update
+
+    async def persistence_agent(state: SupervisorState) -> dict[str, Any]:
+        with logfire.span("agent: persistence_agent"):
+            step = _step_of(state)
+            estimation_id = state.get("estimation_id")
+            request = ActionRequest(
+                agent="persistence_agent",
+                tool="save_estimate",
+                args={
+                    "estimation_id": estimation_id,
+                    "estimate": state.get("estimate") or {},
+                },
+                estimation_id=estimation_id,
+                step=step,
+            )
+            result, contribution = await execute_guarded(
+                request,
+                state,
+                sink=deps.save_sink,
+                audit_preview_chars=deps.audit_preview_chars,
+            )
+            log.info(
+                "supervisor_agent_persistence",
+                outcome=contribution.get("outcome"),
+            )
+            return {"saved": result, "agent_contributions": [contribution]}
 
     async def human_review_gate(state: SupervisorState) -> dict[str, Any]:
         needs, reasons = requires_human_review(
@@ -548,6 +696,9 @@ def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]
                 "validation": state.get("validation"),
                 "risk_flags": state.get("risk_flags") or [],
                 "routing_history": state.get("routing_history") or [],
+                "divergence": state.get("divergence"),
+                "synthesis": state.get("synthesis"),
+                "persist_requested": bool(state.get("persist_requested")),
             }
         )
 
@@ -586,4 +737,5 @@ def make_supervisor_nodes(deps: SupervisorDeps) -> dict[str, Callable[..., Any]]
         "estimate_generator": estimate_generator,
         "coherence_validator": coherence_validator,
         "human_review_gate": human_review_gate,
+        "persistence_agent": persistence_agent,
     }

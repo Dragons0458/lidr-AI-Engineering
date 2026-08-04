@@ -82,7 +82,7 @@ def test_http_flow_captures_review_and_reads_final_checkpoint() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generate_evidence_is_reproducible_and_covers_three_cases(
+async def test_generate_evidence_is_reproducible_and_covers_five_cases(
     tmp_path: Path,
 ) -> None:
     first_dir = tmp_path / "first"
@@ -95,6 +95,8 @@ async def test_generate_evidence_is_reproducible_and_covers_three_cases(
         "example_run_happy.txt",
         "example_run_edge_case.txt",
         "example_run_violate.txt",
+        "example_run_competition.txt",
+        "example_run_persistence.txt",
     ]
     first = {path.name: path.read_text(encoding="utf-8") for path in first_paths}
     second = {path.name: path.read_text(encoding="utf-8") for path in second_paths}
@@ -108,3 +110,33 @@ async def test_generate_evidence_is_reproducible_and_covers_three_cases(
     assert "novel_cryptography" in first["example_run_edge_case.txt"]
     assert "[DENIED]" in first["example_run_violate.txt"]
     assert "tool:validate_estimate" in first["example_run_violate.txt"]
+    assert "COMPETITION" in first["example_run_competition.txt"]
+    assert "divergence:" in first["example_run_competition.txt"]
+    assert "DEFER" in first["example_run_persistence.txt"]
+    assert "persistence = persisted" in first["example_run_persistence.txt"]
+
+
+@pytest.mark.asyncio
+async def test_compete_and_persist_flags_shape_render() -> None:
+    transcript = (cli.EXERCISE_DIR / "sample_transcript_happy_path.txt").read_text(
+        encoding="utf-8"
+    )
+    compete = await cli.run_memory_flow(
+        transcript,
+        estimation_id="s14-compete-flag",
+        decision="approve",
+        compete=True,
+    )
+    rendered = cli.render_evidence(compete)
+    assert "COMPETITION" in rendered
+    assert "divergence:" in rendered
+
+    persist = await cli.run_memory_flow(
+        transcript,
+        estimation_id="s14-persist-flag",
+        decision="approve",
+        persist=True,
+    )
+    rendered_persist = cli.render_evidence(persist)
+    assert "DEFER" in rendered_persist
+    assert "persistence = persisted" in rendered_persist
