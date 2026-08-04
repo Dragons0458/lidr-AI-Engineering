@@ -1,0 +1,56 @@
+==============================================================================
+SESSION 14 — SUPERVISOR MULTI-AGENT RUN
+==============================================================================
+
+estimation_id = s14-live-edge-20260720-2218
+
+ROUTING (supervisor decisions)
+------------------------------------------------------------------------------
+  1. supervisor → requirements_extractor   [llm]  The requirements_extractor is the only agent that can act right now as it needs the transc
+  2. supervisor → budget_searcher          [llm]  The requirements and components are available, allowing the budget_searcher to find histor
+  3. supervisor → estimate_generator       [fallback]  router proposed 'coherence_validator', which is not legal in this state; overridden to 'es
+  4. supervisor → coherence_validator      [llm]  The estimate has been produced but not yet validated, so the coherence_validator can now a
+  5. supervisor → finish                   [llm]  The estimate has been produced and validated, so the process can be completed.
+
+TOOL PRIVILEGE (declared allowlists)
+------------------------------------------------------------------------------
+  supervisor               : (no tools)
+  requirements_extractor   : (no tools)
+  budget_searcher          : search_budgets
+  estimate_generator       : calculate_estimate
+  coherence_validator      : validate_estimate
+
+AUDIT TRAIL (agent_contributions)
+------------------------------------------------------------------------------
+  [  ok  ] requirements_extractor   extract_requirements         19 requirements extracted
+  [  ok  ] requirements_extractor   propose_structure            5 components classified
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Telemetry & IoT\nTask: Imple
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Telemetry & IoT\nTask: Distr
+  [  ok  ] budget_searcher          tool:search_budgets          2 historical items for 'Module: Security & Compliance\nTask:
+  [  ok  ] budget_searcher          tool:search_budgets          2 historical items for 'Module: Security & Compliance\nTask:
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Data & Integrations\nTask: I
+  [  ok  ] estimate_generator       tool:calculate_estimate      total=145.4h across 5 components
+  [  ok  ] coherence_validator      tool:validate_estimate       estimate passed all guardrails
+  [  ok  ] human                    review_decision              human approve: auto-decided by run_agent_s14.py
+
+HUMAN REVIEW
+------------------------------------------------------------------------------
+  triggered: YES
+    - high_risk_scope
+  risk flags:
+    - novel_cryptography
+    - legacy_or_undocumented_integration
+    - custom_security_hardware
+    - mandatory_certification
+    - open_scope
+  decision : approve
+
+ESTIMATE
+------------------------------------------------------------------------------
+  Implement Satellite Telemetry Collection 27.0h
+  Distribute Telemetry Data                31.6h
+  Integrate Quantum Key Distribution (QKD) 29.3h
+  Store Authentication Keys in HSM         29.3h
+  Integrate with COBOL Mainframe           28.2h
+  TOTAL                                    145.4h
+  status = validated

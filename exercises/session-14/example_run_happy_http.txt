@@ -1,0 +1,47 @@
+==============================================================================
+SESSION 14 — SUPERVISOR MULTI-AGENT RUN
+==============================================================================
+
+estimation_id = s14-live-happy-20260720-2217
+
+ROUTING (supervisor decisions)
+------------------------------------------------------------------------------
+  1. supervisor → requirements_extractor   [llm]  The requirements_extractor is the only agent that can act right now to produce requirement
+  2. supervisor → budget_searcher          [fallback]  router proposed 'requirements_extractor', which is not legal in this state; overridden to
+  3. supervisor → estimate_generator       [fallback]  router proposed 'coherence_validator', which is not legal in this state; overridden to 'es
+  4. supervisor → coherence_validator      [llm]  The estimate has been produced but not yet validated, so the coherence_validator can now a
+  5. supervisor → finish                   [llm]  The estimate has been produced and validated, so the process is complete.
+
+TOOL PRIVILEGE (declared allowlists)
+------------------------------------------------------------------------------
+  supervisor               : (no tools)
+  requirements_extractor   : (no tools)
+  budget_searcher          : search_budgets
+  estimate_generator       : calculate_estimate
+  coherence_validator      : validate_estimate
+
+AUDIT TRAIL (agent_contributions)
+------------------------------------------------------------------------------
+  [  ok  ] requirements_extractor   extract_requirements         10 requirements extracted
+  [  ok  ] requirements_extractor   propose_structure            5 components classified
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Frontend / UX\nTask: UI Desi
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Frontend / UX\nTask: Supplie
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Data & Integrations\nTask: S
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Data & Integrations\nTask: I
+  [  ok  ] budget_searcher          tool:search_budgets          8 historical items for 'Module: Authentication & Access\nTas
+  [  ok  ] estimate_generator       tool:calculate_estimate      total=156.9h across 5 components
+  [  ok  ] coherence_validator      tool:validate_estimate       estimate passed all guardrails
+
+HUMAN REVIEW
+------------------------------------------------------------------------------
+  triggered: no (confidence 0.80, all conditions clear)
+
+ESTIMATE
+------------------------------------------------------------------------------
+  UI Design and Prototyping                26.4h
+  Supplier Registration Form Implementation 27.6h
+  SAP ERP Integration for Supplier Data Sync 46.0h
+  Invoice Upload and Validation Workflow   25.3h
+  User Authentication and Role Management  31.6h
+  TOTAL                                    156.9h
+  status = validated

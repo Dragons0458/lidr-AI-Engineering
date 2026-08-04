@@ -1,0 +1,42 @@
+==============================================================================
+SESSION 14 — SUPERVISOR MULTI-AGENT RUN
+==============================================================================
+
+estimation_id = s14-evidence-violate
+
+ROUTING (supervisor decisions)
+------------------------------------------------------------------------------
+  1. supervisor → requirements_extractor   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  2. supervisor → budget_searcher          [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  3. supervisor → estimate_generator       [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  4. supervisor → coherence_validator      [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  5. supervisor → finish                   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+
+TOOL PRIVILEGE (declared allowlists)
+------------------------------------------------------------------------------
+  supervisor               : (no tools)
+  requirements_extractor   : (no tools)
+  budget_searcher          : search_budgets
+  estimate_generator       : calculate_estimate
+  coherence_validator      : validate_estimate
+
+AUDIT TRAIL (agent_contributions)
+------------------------------------------------------------------------------
+  [  ok  ] requirements_extractor   extract_requirements         3 requirements extracted
+  [  ok  ] requirements_extractor   propose_structure            2 components classified
+  [DENIED] budget_searcher          tool:validate_estimate       agent 'budget_searcher' attempted tool 'validate_estimate';
+  [  ok  ] budget_searcher          tool:search_budgets          3 historical items for 'Module: Core\nTask: Auth\nlogin'; ho
+  [  ok  ] budget_searcher          tool:search_budgets          2 historical items for 'Module: Core\nTask: API\nREST backen
+  [  ok  ] estimate_generator       tool:calculate_estimate      total=1684.8h across 2 components
+  [  ok  ] coherence_validator      tool:validate_estimate       estimate passed all guardrails
+
+HUMAN REVIEW
+------------------------------------------------------------------------------
+  triggered: no (confidence 1.00, all conditions clear)
+
+ESTIMATE
+------------------------------------------------------------------------------
+  Auth                                     483.0h
+  API                                      1201.8h
+  TOTAL                                    1684.8h
+  status = validated

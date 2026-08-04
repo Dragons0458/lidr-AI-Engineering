@@ -181,4 +181,4 @@ def test_thinking_budget_ignored_with_warning_for_openai(monkeypatch) -> None:
 
     assert warned == ["thinking_budget_ignored_for_provider"]
     assert "thinking" not in captured
-    assert captured["reasoning_effort"] == "none"
+    assert "reasoning_effort" not in captured

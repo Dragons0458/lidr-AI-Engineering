@@ -212,6 +212,62 @@ def test_complete_structured_chat_returns_model_and_meta(
     assert meta["cache_hit"] is False
 
 
+def test_complete_structured_omits_unsupported_temperature_for_gpt5(
+    monkeypatch, wrapper: LLMWrapper
+) -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return _SampleStructured(answer="ok")
+
+    monkeypatch.setattr(
+        "app.foundation.llm.wrapper._get_instructor_client",
+        lambda _model: FakeClient(),
+    )
+    wrapper.complete_structured(
+        system_prompt="route",
+        user_message="state",
+        response_model=_SampleStructured,
+        model_override="gpt-5-mini",
+    )
+
+    assert "temperature" not in captured
+    assert captured["reasoning_effort"] == "none"
+
+
+def test_complete_structured_keeps_temperature_for_non_reasoning_model(
+    monkeypatch, wrapper: LLMWrapper
+) -> None:
+    captured: dict = {}
+
+    class FakeClient:
+        class chat:
+            class completions:
+                @staticmethod
+                def create(**kwargs):
+                    captured.update(kwargs)
+                    return _SampleStructured(answer="ok")
+
+    monkeypatch.setattr(
+        "app.foundation.llm.wrapper._get_instructor_client",
+        lambda _model: FakeClient(),
+    )
+    wrapper.complete_structured(
+        system_prompt="route",
+        user_message="state",
+        response_model=_SampleStructured,
+        model_override="gpt-4o-mini",
+    )
+
+    assert captured["temperature"] == 0
+    assert "reasoning_effort" not in captured
+
+
 def test_complete_stream_replays_cache(monkeypatch, wrapper: LLMWrapper) -> None:
     monkeypatch.setattr(
         "app.foundation.llm.wrapper.completion",

@@ -1,0 +1,52 @@
+==============================================================================
+SESSION 14 — SUPERVISOR MULTI-AGENT RUN
+==============================================================================
+
+estimation_id = s14-evidence-edge_case
+
+ROUTING (supervisor decisions)
+------------------------------------------------------------------------------
+  1. supervisor → requirements_extractor   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  2. supervisor → budget_searcher          [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  3. supervisor → estimate_generator       [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  4. supervisor → coherence_validator      [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+  5. supervisor → finish                   [fallback]  router unavailable (RuntimeError); fell back to the dependency ladder
+
+TOOL PRIVILEGE (declared allowlists)
+------------------------------------------------------------------------------
+  supervisor               : (no tools)
+  requirements_extractor   : (no tools)
+  budget_searcher          : search_budgets
+  estimate_generator       : calculate_estimate
+  coherence_validator      : validate_estimate
+
+AUDIT TRAIL (agent_contributions)
+------------------------------------------------------------------------------
+  [  ok  ] requirements_extractor   extract_requirements         2 requirements extracted
+  [  ok  ] requirements_extractor   propose_structure            2 components classified
+  [  ok  ] budget_searcher          tool:search_budgets          no historical items for 'Module: Core\nTask: Auth\nlogin'
+  [  ok  ] budget_searcher          tool:search_budgets          no historical items for 'Module: Core\nTask: API\nREST backe
+  [  ok  ] estimate_generator       tool:calculate_estimate      total=0.0h across 2 components
+  [  ok  ] coherence_validator      tool:validate_estimate       3 issue(s) found
+  [  ok  ] human                    review_decision              human approve: auto-decided by run_agent_s14.py
+
+HUMAN REVIEW
+------------------------------------------------------------------------------
+  triggered: YES
+    - low_confidence
+    - no_precedent
+    - high_risk_scope
+  risk flags:
+    - novel_cryptography
+    - legacy_or_undocumented_integration
+    - custom_security_hardware
+    - mandatory_certification
+    - open_scope
+  decision : approve
+
+ESTIMATE
+------------------------------------------------------------------------------
+  Auth                                     0.0h
+  API                                      0.0h
+  TOTAL                                    0.0h
+  status = validated
