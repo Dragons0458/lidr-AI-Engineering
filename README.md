@@ -5,11 +5,9 @@ reuniones usando LLMs a través de LiteLLM.
 
 ## Inicio rápido (Docker Compose)
 
-El stack incluye **Redis Stack** (`redis/redis-stack:latest`) para caché exact-match y
-búsqueda vectorial (caché semántico con RediSearch), y **Postgres** (`pgvector/pgvector:pg16`)
-para ingesta y pseudonimización (Sesión 6). La API recibe `REDIS_URL=redis://redis:6379` y
-`DATABASE_URL=postgresql+psycopg://estimator:estimator@postgres:5432/estimator` en Compose.
-RedisInsight opcional en el puerto `8001`; Postgres expuesto en el host en el puerto `5433`.
+Stack Sesión 15: **`web`** (Streamlit, único puerto publicado en modo prod-like), **`ai-service`**
+(FastAPI en red interna), **`postgres`** (pgvector), **`redis`** (Stack) y **`migrate`** (Alembic
+one-shot). Guía completa y comprobaciones de aceptación: [`docs/deployment-local.md`](docs/deployment-local.md).
 
 1. Crea el archivo de entorno:
 
@@ -17,36 +15,42 @@ RedisInsight opcional en el puerto `8001`; Postgres expuesto en el host en el pu
 cp .env.example .env
 ```
 
-2. Edita `.env` con una clave de API real (OpenAI, Anthropic o Google).
+2. Edita `.env` con una clave de API real (OpenAI, Anthropic o Google) y deja
+   `ESTIMATE_API_KEY` / `AI_SERVICE_TOKEN` y `RETRIEVAL_API_KEY` alineados (valores demo en
+   `.env.example` sirven en local). Streamlit llama a la API con `X-API-Key`.
 
-    - Para Docker Compose, `streamlit` lee `ESTIMATION_API_BASE_URL` y `STREAMLIT_DB_PATH`
-      desde el entorno (SQLite local en `streamlit_ui/data/frontend.db`).
-    - El archivo `.streamlit/secrets.toml` es opcional y no es obligatorio.
+### Modo prod-like (frontera: solo `:8501` en el host)
 
-3. Construye y ejecuta todo:
+```bash
+docker compose -f docker-compose.yml up --build -d
+```
+
+- UI: `http://localhost:8501` (puerto configurable con `WEB_PORT`)
+- La API **no** está en `localhost:8000`; el contenedor `web` usa `http://ai-service:8000`
+- Readiness: `GET /health/ready` (Postgres + Redis) dentro de la red Docker
+
+Smoke E2E post-despliegue (requiere corpus sembrado y clave LLM real; **no** corre en CI):
+
+```bash
+docker compose -f docker-compose.yml exec web python scripts/smoke_test_s15.py
+```
+
+### Modo desarrollo (override automático)
+
+`docker-compose.override.yml` publica `8000`/`5433`/`6379`, monta el código y activa `--reload`:
 
 ```bash
 docker compose up --build
 ```
 
-4. Abre las URLs:
+- API: `http://localhost:8000/docs` y `http://localhost:8000/health`
+- Streamlit: `http://localhost:8501`
+- Postgres en el host: puerto `5433`
 
-- Documentación de la API: `http://localhost:8000/docs`
-- Salud: `http://localhost:8000/health`
-- Interfaz de Streamlit: `http://localhost:8501`
-
-> Nota: salud se expone en `/health` (raíz), no en `/api/v1/health`.
-
-5. Comprobación rápida opcional:
+Detener sin borrar volúmenes:
 
 ```bash
-curl http://localhost:8000/health
-```
-
-Detener los servicios:
-
-```bash
-docker compose down
+docker compose -f docker-compose.yml down
 ```
 
 Solo Redis (desarrollo local con `uvicorn` en el host):
