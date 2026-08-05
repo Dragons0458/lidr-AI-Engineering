@@ -1,0 +1,52 @@
+name: ci
+
+# Offline only. Do NOT run scripts/smoke_test_s15.py here — that is a
+# post-deploy check that calls the real LLM (Session 15 article 06).
+
+on:
+  push:
+    branches: [main, "juan-solano-*"]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+
+      - name: Sync dependencies
+        run: uv sync --group dev
+
+      - name: Ruff check
+        run: uv run ruff check .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Pytest (offline unit/api)
+        env:
+          OPENAI_API_KEY: sk-ci-placeholder
+          ESTIMATE_API_KEY: ci-estimate-key
+          AI_SERVICE_TOKEN: ci-estimate-key
+          RETRIEVAL_API_KEY: ci-retrieval-key
+          APP_ENV: development
+        run: >
+          uv run pytest -q
+          tests/test_health.py
+          tests/api/test_service_token.py
+          tests/api/test_security.py
+          tests/unit/api/
+          --ignore=tests/unit/api/test_ingestion_endpoint.py
+
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build prod-like images
+        run: docker compose -f docker-compose.yml build

@@ -1,0 +1,9 @@
+=== docker image ls (before rebuild) ===
+REPOSITORY                TAG        SIZE
+estimador-cag-api         latest     19.1GB
+estimador-cag-streamlit   latest     19.1GB
+=== historical service names ===
+04ded3596190_estimador-cag-api-1 estimador-cag-api Created
+estimador-cag-streamlit-1 7abecd212bb5 Exited (0) 4 weeks ago
+estimador-cag-postgres-1 pgvector/pgvector:pg16 Exited (0) 2 weeks ago
+estimador-cag-redis-1 redis/redis-stack:latest Exited (143) 2 weeks ago

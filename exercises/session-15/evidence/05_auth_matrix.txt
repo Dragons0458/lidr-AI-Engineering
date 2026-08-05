@@ -1,0 +1,51 @@
+# Auth matrix (Session 15)
+# Public prefixes: ('/health', '/docs', '/redoc', '/openapi.json')
+
+METHOD   PATH                                                    PUBLIC?
+---------------------------------------------------------------------------
+GET      /api/v1/config/models                                   no (needs X-API-Key)
+PUT      /api/v1/config/models                                   no (needs X-API-Key)
+GET      /api/v1/config/retrieval                                no (needs X-API-Key)
+PUT      /api/v1/config/retrieval                                no (needs X-API-Key)
+POST     /api/v1/estimate                                        no (needs X-API-Key)
+POST     /api/v1/estimate/stream                                 no (needs X-API-Key)
+GET      /api/v1/ingestion/jobs/{job_id}                         no (needs X-API-Key)
+POST     /api/v1/ingestion/runs                                  no (needs X-API-Key)
+POST     /api/v1/sessions                                        no (needs X-API-Key)
+GET      /api/v1/sessions/{session_id}                           no (needs X-API-Key)
+POST     /api/v1/sessions/{session_id}/estimate                  no (needs X-API-Key)
+POST     /api/v1/sessions/{session_id}/estimate-acb              no (needs X-API-Key)
+GET      /docs                                                   yes
+GET      /docs/oauth2-redirect                                   yes
+POST     /embeddings/compare                                     no (needs X-API-Key)
+GET      /embeddings/index/jobs/{job_id}                         no (needs X-API-Key)
+POST     /embeddings/index/runs                                  no (needs X-API-Key)
+GET      /embeddings/index/stats                                 no (needs X-API-Key)
+POST     /embeddings/ingest                                      no (needs X-API-Key)
+GET      /health                                                 yes
+GET      /health/ready                                           yes
+GET      /openapi.json                                           yes
+GET      /redoc                                                  yes
+POST     /search                                                 no (needs X-API-Key)
+POST     /v1/estimate/agent/graph                                no (needs X-API-Key)
+POST     /v1/estimate/agent/graph/stream                         no (needs X-API-Key)
+GET      /v1/estimate/agent/graph/{estimation_id}/progress       no (needs X-API-Key)
+POST     /v1/estimate/agent/graph/{estimation_id}/proposal       no (needs X-API-Key)
+POST     /v1/estimate/agent/graph/{estimation_id}/resume         no (needs X-API-Key)
+POST     /v1/estimate/agent/graph/{estimation_id}/resume-stream  no (needs X-API-Key)
+GET      /v1/estimate/agent/graph/{estimation_id}/state          no (needs X-API-Key)
+POST     /v1/estimate/agent/hours                                no (needs X-API-Key)
+POST     /v1/estimate/agent/structure                            no (needs X-API-Key)
+POST     /v1/estimate/agent/supervisor                           no (needs X-API-Key)
+POST     /v1/estimate/agent/supervisor/{estimation_id}/resume    no (needs X-API-Key)
+GET      /v1/estimate/agent/supervisor/{estimation_id}/state     no (needs X-API-Key)
+POST     /v1/estimate/from-transcript                            no (needs X-API-Key)
+POST     /v1/estimate/stages/assemble                            no (needs X-API-Key)
+POST     /v1/estimate/stages/generate                            no (needs X-API-Key)
+POST     /v1/estimate/stages/reformulate                         no (needs X-API-Key)
+POST     /v1/estimate/stages/retrieve                            no (needs X-API-Key)
+POST     /v1/estimate/stages/structure                           no (needs X-API-Key)
+POST     /v1/estimate/stages/verify                              no (needs X-API-Key)
+POST     /v1/estimate/tasks/hours                                no (needs X-API-Key)
+POST     /v1/retrieval/advanced-search                           no (needs X-API-Key)
+POST     /v1/retrieval/search                                    no (needs X-API-Key)

@@ -1,0 +1,20 @@
+# Session 15 — BEFORE baseline (frontier)
+# Captured from the pre-Session-15 docker-compose.yml topology.
+# Services and published host ports (dev compose of record):
+#
+#   redis     → 6379:6379, 8001:8001
+#   postgres  → 5433:5432
+#   api       → 8000:8000          ← AI service reachable from the host
+#   streamlit → 8501:8501
+#
+# Expected when that stack is up:
+#   curl -sS -o /dev/null -w '%{http_code}' http://localhost:8000/health
+#   → 200
+#
+# That host-reachable AI service (custodian of OPENAI_API_KEY) is the defect
+# Session 15 corrects. See evidence/03_frontier.txt for the AFTER contrast.
+
+date: 2026-08-04
+note: Docker daemon was cold at capture time; ports listed from compose source
+      (git HEAD before S15). Historical containers named estimador-cag-api-1
+      confirm the previous service name was `api` with published 8000.

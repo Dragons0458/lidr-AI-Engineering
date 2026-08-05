@@ -1,0 +1,9 @@
+=== frontier: host :8000 (must fail) ===
+ exit=7
+=== frontier: from web → ai-service (must succeed) ===
+200 {'status': 'ok', 'timestamp': '2026-08-05T00:08:15.226674'}
+=== published ports check ===
+ai-service 8000/tcp
+postgres 5432/tcp
+redis 6379/tcp, 8001/tcp
+web 0.0.0.0:8501->8501/tcp, [::]:8501->8501/tcp
