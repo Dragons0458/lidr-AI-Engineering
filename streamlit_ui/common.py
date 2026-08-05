@@ -49,10 +49,21 @@ def get_api_root_url(base_url: str | None = None) -> str:
 
 
 def get_estimate_api_key() -> str:
-    """Return the Session 9 estimate API key from env or Streamlit secrets."""
-    env_key = os.getenv("ESTIMATE_API_KEY", "").strip()
+    """Return the Session 9 estimate API key from env or Streamlit secrets.
+
+    Also accepts ``AI_SERVICE_TOKEN`` (Session 15 alias).
+    """
+    env_key = (
+        os.getenv("ESTIMATE_API_KEY", "").strip()
+        or os.getenv("AI_SERVICE_TOKEN", "").strip()
+    )
     try:
-        return str(st.secrets.get("ESTIMATE_API_KEY", env_key))
+        return str(
+            st.secrets.get(
+                "ESTIMATE_API_KEY",
+                st.secrets.get("AI_SERVICE_TOKEN", env_key),
+            )
+        )
     except StreamlitSecretNotFoundError:
         return env_key
 
@@ -66,11 +77,18 @@ def get_retrieval_api_key() -> str:
         return env_key
 
 
+def service_api_headers(*, api_key: str | None = None) -> dict[str, str]:
+    """Headers for calls into the (now gated) AI service."""
+    key = (api_key if api_key is not None else get_estimate_api_key()).strip()
+    return {"X-API-Key": key} if key else {}
+
+
 @st.cache_data(ttl=15)
 def fetch_effective_primary_model(api_base_url: str) -> str | None:
     try:
         response = httpx.get(
             f"{api_base_url.rstrip('/')}/config/models",
+            headers=service_api_headers(),
             timeout=5.0,
         )
         response.raise_for_status()
@@ -100,6 +118,7 @@ def fetch_available_agent_models(
     try:
         response = httpx.get(
             f"{api_base_url.rstrip('/')}/config/models",
+            headers=service_api_headers(),
             timeout=timeout,
         )
         response.raise_for_status()
@@ -181,7 +200,8 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
             return (
                 "**No autorizado (401)** — clave API inválida o ausente.\n\n"
                 f"{detail}\n\n"
-                "_Configura `ESTIMATE_API_KEY` / `RETRIEVAL_API_KEY` en `.env` o secrets._"
+                "_Configura `ESTIMATE_API_KEY` / `AI_SERVICE_TOKEN` "
+                "(y `RETRIEVAL_API_KEY` para búsqueda) en `.env` o secrets._"
             )
         if status == 422:
             return (
@@ -200,13 +220,24 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
             )
         if status == 502:
             return f"**Error del pipeline LLM (502)**\n\n{detail}"
+        if status == 503:
+            return (
+                "**Servicio no listo (503)** — una dependencia (Postgres/Redis) "
+                "no responde.\n\n"
+                f"{detail}\n\n"
+                "_Revisa `GET /health/ready` y el runbook "
+                "`docs/runbooks/ai-service-no-responde.md`._"
+            )
         if status == 500:
             return f"**Error del servidor (500)**\n\n{detail}"
         return f"**Error HTTP {status}**\n\n{detail}"
 
     return (
         f"No se pudo conectar con la API en `{api_base_url}`.\n\n"
-        "Comprueba que `uvicorn` esté en marcha y que la URL del sidebar sea correcta.\n\n"
+        "Comprueba que el stack esté en marcha (`docker compose ps`) y que "
+        "`ESTIMATION_API_BASE_URL` apunte a `http://ai-service:8000/api/v1` "
+        "dentro de Compose (o a `http://localhost:8000/api/v1` en el host con "
+        "el override de desarrollo).\n\n"
         f"_Detalle técnico: {exc}_"
     )
 

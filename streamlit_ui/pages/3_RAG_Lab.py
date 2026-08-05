@@ -12,7 +12,12 @@ runpy.run_path(str(Path(__file__).resolve().parent.parent / "path_setup.py"))
 import httpx
 import streamlit as st
 
-from streamlit_ui.common import format_api_error, get_api_base_url, get_api_root_url
+from streamlit_ui.common import (
+    format_api_error,
+    get_api_base_url,
+    get_api_root_url,
+    service_api_headers,
+)
 from streamlit_ui.rag import (
     COST_BADGE,
     STRATEGY_CATALOG,
@@ -92,7 +97,12 @@ if st.button("Comparar estrategias", type="primary", disabled=not selected):
         with st.spinner("Comparando estrategias (puede tardar varios minutos)…"):
             start = time.perf_counter()
             try:
-                response = httpx.post(endpoint, json=payload, timeout=600.0)
+                response = httpx.post(
+                    endpoint,
+                    json=payload,
+                    headers=service_api_headers(),
+                    timeout=600.0,
+                )
                 response.raise_for_status()
                 body = response.json()
                 duration_ms = int((time.perf_counter() - start) * 1000)

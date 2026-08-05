@@ -23,6 +23,7 @@ from streamlit_ui.common import (
     get_api_base_url,
     render_structured_phases,
     resolve_sidebar_model,
+    service_api_headers,
 )
 from streamlit_ui.store import (
     get_chat_session,
@@ -71,7 +72,11 @@ def build_session_debug_url(session_id: str) -> str:
 
 
 def fetch_session_debug(session_id: str) -> dict[str, object]:
-    response = httpx.get(build_session_debug_url(session_id), timeout=10.0)
+    response = httpx.get(
+        build_session_debug_url(session_id),
+        headers=service_api_headers(),
+        timeout=10.0,
+    )
     response.raise_for_status()
     return response.json()
 
@@ -126,7 +131,12 @@ def _parse_reference_projects(rows: list[dict[str, object]]) -> list[ReferencePr
 
 
 def create_session() -> str:
-    response = httpx.post(build_sessions_url(), json={}, timeout=20.0)
+    response = httpx.post(
+        build_sessions_url(),
+        json={},
+        headers=service_api_headers(),
+        timeout=20.0,
+    )
     response.raise_for_status()
     return str(response.json()["session_id"])
 
@@ -526,6 +536,7 @@ if submitted:
             data=data,
             files=files,
             params={"prompt_version": prompt_version},
+            headers=service_api_headers(),
             timeout=120.0,
         )
         response.raise_for_status()
@@ -633,6 +644,7 @@ if prompt := st.chat_input(chat_placeholder, disabled=chat_disabled):
             data=data,
             files=[],
             params={"prompt_version": st.session_state.prompt_version},
+            headers=service_api_headers(),
             timeout=120.0,
         )
         response.raise_for_status()

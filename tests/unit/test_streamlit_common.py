@@ -146,16 +146,19 @@ def test_fetch_available_agent_models_uses_api_catalog_and_filters_non_openai(
 
     calls = []
 
-    def fake_get(url, *, timeout):
-        calls.append((url, timeout))
+    def fake_get(url, **kwargs):
+        calls.append((url, kwargs.get("timeout"), kwargs.get("headers")))
         return Response()
 
     fetch_available_agent_models.clear()
     monkeypatch.setattr("streamlit_ui.common.httpx.get", fake_get)
+    monkeypatch.setenv("ESTIMATE_API_KEY", "test-key")
     models = fetch_available_agent_models("http://api/api/v1", timeout=1.25)
 
     assert models == ["gpt-5", "openai/gpt-4o-mini"]
-    assert calls == [("http://api/api/v1/config/models", 1.25)]
+    assert calls == [
+        ("http://api/api/v1/config/models", 1.25, {"X-API-Key": "test-key"})
+    ]
 
 
 def test_fetch_available_agent_models_falls_back_on_timeout_or_api_error(

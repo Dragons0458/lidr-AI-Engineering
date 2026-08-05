@@ -11,6 +11,7 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from app import dependencies  # noqa: E402
+from app.api.security import require_service_token  # noqa: E402
 from app.config import get_settings  # noqa: E402
 from app.foundation.llm.runtime_config import RuntimeModelConfig  # noqa: E402
 from app.foundation.llm.wrapper import LLMWrapper  # noqa: E402
@@ -20,6 +21,23 @@ from app.main import app  # noqa: E402
 
 def anyio_backend() -> str:
     return "asyncio"
+
+
+@pytest.fixture(autouse=True)
+def bypass_global_service_token(request):
+    """Skip the Session 15 global gate unless the test opts in.
+
+    Existing unit/API tests exercise business logic without auth headers.
+    Auth-matrix tests mark themselves with ``@pytest.mark.require_service_token``.
+    """
+    if request.node.get_closest_marker("require_service_token"):
+        yield
+        return
+    app.dependency_overrides[require_service_token] = lambda: None
+    try:
+        yield
+    finally:
+        app.dependency_overrides.pop(require_service_token, None)
 
 
 @pytest.fixture

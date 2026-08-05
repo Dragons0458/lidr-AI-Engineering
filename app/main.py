@@ -1,9 +1,8 @@
 from contextlib import asynccontextmanager
-from datetime import datetime
 import logging
 from uuid import uuid4
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 import structlog
 from slowapi.errors import RateLimitExceeded
@@ -20,9 +19,11 @@ from app.api.routers.estimate_graph import router as estimate_graph_router
 from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_supervisor import router as estimate_supervisor_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
+from app.api.routers.health import router as health_router
 from app.api.routers.retrieval import router as retrieval_router
 from app.api.routers.retrieval_advanced import router as retrieval_advanced_router
 from app.api.search import router as search_router
+from app.api.security import require_service_token
 from app.api.sessions import router as sessions_router
 from app.config import get_settings
 from app.foundation.observability.logfire_setup import (
@@ -187,12 +188,14 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /v1/estimate/agent/graph/{estimation_id}/proposal → Propuesta comercial (S13)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /api/v1/config/retrieval → Configuración runtime de recuperación (S10)
-- GET /health → Estado del servicio
+- GET /health → Liveness (sin LLM ni dependencias)
+- GET /health/ready → Readiness (Postgres + Redis)
 - POST /sessions → Crear sesión en memoria
 - POST /sessions/{session_id}/estimate → Estimar usando sesión y adjuntos
 """,
     version="1.0.0",
     lifespan=lifespan,
+    dependencies=[Depends(require_service_token)],
 )
 
 configure_logfire(
@@ -227,6 +230,7 @@ async def request_id_middleware(request: Request, call_next):
     return response
 
 
+app.include_router(health_router)
 app.include_router(estimation_router, prefix="/api/v1")
 app.include_router(sessions_router, prefix="/api/v1")
 app.include_router(ingestion_router)
@@ -242,8 +246,3 @@ app.include_router(estimate_agent_router)
 app.include_router(estimate_graph_router)
 app.include_router(estimate_supervisor_router)
 app.include_router(corpus_index_router)
-
-
-@app.get("/health")
-async def health():
-    return {"status": "ok", "timestamp": datetime.now().isoformat()}

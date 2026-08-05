@@ -84,4 +84,5 @@ markers = [
     "eval: LLM evaluation tests that may require external model access",
     "slow: slower tests that are not intended for the tight feedback loop",
     "integration: tests that need local Postgres or other infrastructure",
+    "require_service_token: keep the Session 15 global API-key gate enabled",
 ]
