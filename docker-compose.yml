@@ -1,9 +1,19 @@
+# =============================================================================
+# Base / prod-like Compose (Session 15)
+# Only `web` publishes a host port. Use with:
+#   docker compose -f docker-compose.yml up --build
+# Dev convenience (bind mounts, --reload, published 8000/5433) lives in
+# docker-compose.override.yml and is applied automatically by `docker compose up`.
+# =============================================================================
+
+networks:
+  estimador_net:
+    driver: bridge
+
 services:
   redis:
-    image: redis/redis-stack:latest
-    ports:
-      - "6379:6379"
-      - "8001:8001"
+    image: redis/redis-stack:7.4.0-v0
+    networks: [estimador_net]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -11,11 +21,12 @@ services:
       interval: 5s
       timeout: 3s
       retries: 5
+    restart: unless-stopped
 
   postgres:
     image: pgvector/pgvector:pg16
-    # In production, scale shared_buffers (~25% RAM) and effective_cache_size (~75% RAM).
     shm_size: 1gb
+    networks: [estimador_net]
     command: >
       postgres
       -c shared_buffers=512MB
@@ -24,42 +35,61 @@ services:
       -c maintenance_work_mem=512MB
       -c max_parallel_maintenance_workers=2
     environment:
-      POSTGRES_USER: estimator
-      POSTGRES_PASSWORD: estimator
-      POSTGRES_DB: estimator
-    ports:
-      - "5433:5432"
+      POSTGRES_USER: ${POSTGRES_USER:-estimator}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-estimator}
+      POSTGRES_DB: ${POSTGRES_DB:-estimator}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD", "pg_isready", "-U", "estimator", "-d", "estimator"]
+      test:
+        [
+          "CMD",
+          "pg_isready",
+          "-U",
+          "${POSTGRES_USER:-estimator}",
+          "-d",
+          "${POSTGRES_DB:-estimator}",
+        ]
       interval: 10s
       timeout: 5s
       retries: 5
+    restart: unless-stopped
 
-  api:
+  migrate:
     build:
       context: .
       dockerfile: Dockerfile
+      target: ai-service
+    networks: [estimador_net]
     env_file:
       - .env
     environment:
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql+psycopg://estimator:estimator@postgres:5432/estimator
-    ports:
-      - "8000:8000"
-    volumes:
-      - ./app:/app/app
-      - ./data:/app/data
-      - ./alembic:/app/alembic
-      - ./alembic.ini:/app/alembic.ini
-      - ./scripts:/app/scripts
-      - ./evals:/app/evals
-      - ./tests:/app/tests
-    command: >
-      sh -c "alembic upgrade head &&
-             uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator}@postgres:5432/${POSTGRES_DB:-estimator}
+    command: ["alembic", "upgrade", "head"]
     depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
+
+  ai-service:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: ai-service
+    networks: [estimador_net]
+    env_file:
+      - .env
+    environment:
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator}@postgres:5432/${POSTGRES_DB:-estimator}
+      APP_ENV: ${APP_ENV:-production}
+    # No ports: — private on estimador_net only (frontier).
+    expose:
+      - "8000"
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       postgres:
@@ -74,41 +104,51 @@ services:
         ]
       interval: 30s
       timeout: 5s
-      start_period: 30s
+      start_period: 60s
       retries: 3
+    restart: unless-stopped
 
-  streamlit:
+  web:
     build:
       context: .
       dockerfile: Dockerfile
+      target: web
+    networks: [estimador_net]
     env_file:
       - .env
     environment:
       PYTHONPATH: /app
-      ESTIMATION_API_BASE_URL: http://api:8000/api/v1
+      ESTIMATION_API_BASE_URL: http://ai-service:8000/api/v1
+      AI_SERVICE_URL: http://ai-service:8000
       STREAMLIT_DB_PATH: /app/streamlit_ui/data/frontend.db
       REDIS_URL: redis://redis:6379
-      DATABASE_URL: postgresql+psycopg://estimator:estimator@postgres:5432/estimator
-    command:
-      [
-        "streamlit",
-        "run",
-        "streamlit_ui/home.py",
-        "--server.address=0.0.0.0",
-        "--server.port=8501",
-      ]
+      DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-estimator}:${POSTGRES_PASSWORD:-estimator}@postgres:5432/${POSTGRES_DB:-estimator}
     ports:
-      - "8501:8501"
+      - "${WEB_PORT:-8501}:8501"
     volumes:
-      - ./streamlit_ui:/app/streamlit_ui
+      - streamlit_data:/app/streamlit_ui/data
     depends_on:
-      api:
+      ai-service:
         condition: service_healthy
       redis:
         condition: service_healthy
       postgres:
         condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')",
+        ]
+      interval: 30s
+      timeout: 5s
+      start_period: 30s
+      retries: 3
+    restart: unless-stopped
 
 volumes:
   redis_data:
   postgres_data:
+  streamlit_data:
