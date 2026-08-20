@@ -1,0 +1,8 @@
+health 200 {'status': 'ok', 'timestamp': '2026-08-05T02:21:09.803311'}
+ready 200 {'status': 'ready', 'checks': {'postgres': 'ok', 'redis': 'ok'}, 'timestamp': '2026-08-05T02:21:10.205490'}
+config/models 200
+config/models (no token) 401
+transcript /app/scripts/data/s15_smoke_transcript.txt (2143 chars)
+POST /v1/estimate/from-transcript 200
+estimate: confidence=low, sources=10, days=341, modules=4
+OK — smoke_test_s15 passed (estimate: confidence=low, sources=10, days=341)

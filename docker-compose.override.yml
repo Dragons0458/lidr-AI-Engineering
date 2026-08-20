@@ -1,0 +1,47 @@
+# =============================================================================
+# Dev override (auto-loaded by `docker compose up`)
+# Bind mounts, --reload, and published ports for /docs and psql from the host.
+# Prod-like evidence / demos must pin the base file only:
+#   docker compose -f docker-compose.yml up --build
+# =============================================================================
+
+services:
+  redis:
+    ports:
+      - "6379:6379"
+      - "8001:8001"
+
+  postgres:
+    ports:
+      - "5433:5432"
+
+  ai-service:
+    environment:
+      APP_ENV: development
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./app:/app/app
+      - ./data:/app/data
+      - ./alembic:/app/alembic
+      - ./alembic.ini:/app/alembic.ini
+      - ./scripts:/app/scripts
+      - ./evals:/app/evals
+      - ./tests:/app/tests
+    command:
+      [
+        "uvicorn",
+        "app.main:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "8000",
+        "--reload",
+      ]
+
+  web:
+    environment:
+      APP_ENV: development
+    volumes:
+      - ./streamlit_ui:/app/streamlit_ui
+      - streamlit_data:/app/streamlit_ui/data

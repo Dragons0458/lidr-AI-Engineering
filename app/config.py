@@ -68,6 +68,10 @@ class Settings(BaseSettings):
     IDEMPOTENCY_TTL: int = 86400
     RETRIEVAL_API_KEY: str | None = None
     ESTIMATE_API_KEY: str | None = None
+    # Session 15 alias of ESTIMATE_API_KEY (exercise / PaaS naming). Prefer
+    # ESTIMATE_API_KEY for S09–S14 compatibility; either alone is enough.
+    AI_SERVICE_TOKEN: str | None = None
+    AI_SERVICE_URL: str = "http://ai-service:8000"
     # --- Session 10: hybrid search + cross-encoder reranking ---
     RETRIEVAL_SEARCH_MODE: Literal["vector", "hybrid"] = "vector"
     RERANKER_ENABLED: bool = False
@@ -157,6 +161,15 @@ class Settings(BaseSettings):
         return data
 
     @model_validator(mode="after")
+    def resolve_service_token_alias(self) -> "Settings":
+        """Mirror AI_SERVICE_TOKEN ↔ ESTIMATE_API_KEY so either env name works."""
+        if self.AI_SERVICE_TOKEN and not self.ESTIMATE_API_KEY:
+            self.ESTIMATE_API_KEY = self.AI_SERVICE_TOKEN
+        elif self.ESTIMATE_API_KEY and not self.AI_SERVICE_TOKEN:
+            self.AI_SERVICE_TOKEN = self.ESTIMATE_API_KEY
+        return self
+
+    @model_validator(mode="after")
     def validate_api_key_for_provider(self) -> "Settings":
         """Ensure the API key for the selected LLM provider is present."""
         if self.LLM_PROVIDER == "openai" and not self.OPENAI_API_KEY:
@@ -168,6 +181,11 @@ class Settings(BaseSettings):
         if self.LLM_PROVIDER == "google" and not self.GOOGLE_API_KEY:
             raise ValueError("GOOGLE_API_KEY is required when LLM_PROVIDER is 'google'")
         return self
+
+    @property
+    def effective_service_token(self) -> str | None:
+        """Token that gates the AI service (ESTIMATE_API_KEY / AI_SERVICE_TOKEN)."""
+        return self.AI_SERVICE_TOKEN or self.ESTIMATE_API_KEY
 
 
 @lru_cache

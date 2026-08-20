@@ -10,7 +10,11 @@ runpy.run_path(str(Path(__file__).resolve().parent.parent / "path_setup.py"))
 import httpx
 import streamlit as st
 
-from streamlit_ui.common import fetch_effective_primary_model, get_api_base_url
+from streamlit_ui.common import (
+    fetch_effective_primary_model,
+    get_api_base_url,
+    service_api_headers,
+)
 from streamlit_ui.rag import (
     MODEL_KNOB_LABELS,
     RETRIEVAL_KNOB_LABELS,
@@ -27,7 +31,11 @@ config_url = f"{api_base_url.rstrip('/')}/config/models"
 @st.cache_data(ttl=15)
 def fetch_config(api_base: str) -> dict | None:
     try:
-        response = httpx.get(f"{api_base.rstrip('/')}/config/models", timeout=10.0)
+        response = httpx.get(
+            f"{api_base.rstrip('/')}/config/models",
+            headers=service_api_headers(),
+            timeout=10.0,
+        )
         response.raise_for_status()
         return response.json()
     except httpx.HTTPError:
@@ -98,7 +106,11 @@ retrieval_url = f"{api_base_url.rstrip('/')}/config/retrieval"
 @st.cache_data(ttl=15)
 def fetch_retrieval_config(api_base: str) -> dict | None:
     try:
-        response = httpx.get(f"{api_base.rstrip('/')}/config/retrieval", timeout=10.0)
+        response = httpx.get(
+            f"{api_base.rstrip('/')}/config/retrieval",
+            headers=service_api_headers(),
+            timeout=10.0,
+        )
         response.raise_for_status()
         return response.json()
     except httpx.HTTPError:
@@ -225,7 +237,12 @@ else:
             | {"search_mode", "task_hours_top_k", "task_hours_distance_threshold"},
         )
         try:
-            response = httpx.put(retrieval_url, json=payload, timeout=15.0)
+            response = httpx.put(
+                retrieval_url,
+                json=payload,
+                headers=service_api_headers(),
+                timeout=15.0,
+            )
             if response.status_code == 200:
                 fetch_retrieval_config.clear()
                 st.success("Configuración de recuperación guardada.")
@@ -244,7 +261,12 @@ st.divider()
 if st.button("Guardar cambios", type="primary", key="save_models"):
     payload = {"models": build_settings_update_payload(selections)}
     try:
-        response = httpx.put(config_url, json=payload, timeout=15.0)
+        response = httpx.put(
+            config_url,
+            json=payload,
+            headers=service_api_headers(),
+            timeout=15.0,
+        )
         if response.status_code == 200:
             st.session_state.settings_selections = selections
             fetch_config.clear()

@@ -1,0 +1,25 @@
+=== BEFORE restart ===
+-- budget_chunks --
+1577
+-- estimations --
+1
+rag_runs 1
+=== down (no -v) ===
+# docker compose -f docker-compose.yml down
+=== up ===
+waiting for healthy...
+t=1: ai-service healthy; web starting
+t=2: all four services healthy
+=== AFTER restart ===
+-- budget_chunks --
+1577
+-- estimations --
+1
+rag_runs 1
+SERVICE      STATUS
+ai-service   Up (healthy)
+postgres     Up (healthy)
+redis        Up (healthy)
+web          Up (healthy)
+
+# Row counts match → corpus + UI history survived. Contrast: down -v would wipe volumes.

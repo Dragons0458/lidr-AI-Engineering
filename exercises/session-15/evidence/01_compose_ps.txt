@@ -1,0 +1,6 @@
+=== compose ps ===
+SERVICE      STATUS                        PORTS
+ai-service   Up About a minute (healthy)   8000/tcp
+postgres     Up About a minute (healthy)   5432/tcp
+redis        Up About a minute (healthy)   6379/tcp, 8001/tcp
+web          Up About a minute (healthy)   0.0.0.0:8501->8501/tcp, [::]:8501->8501/tcp

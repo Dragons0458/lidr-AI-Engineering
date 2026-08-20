@@ -17,6 +17,7 @@ from streamlit_ui.common import (
     format_api_error,
     get_api_base_url,
     render_structured_phases,
+    service_api_headers,
 )
 from streamlit_ui.store import get_estimation, list_estimations, save_estimation
 
@@ -82,6 +83,7 @@ if submitted:
                     endpoint,
                     json=payload,
                     params={"prompt_version": prompt_version},
+                    headers=service_api_headers(),
                     timeout=120.0,
                 )
                 response.raise_for_status()

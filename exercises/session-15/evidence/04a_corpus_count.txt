@@ -1,0 +1,13 @@
+# Session 15 — Fase A: corpus count BEFORE spending tokens on check 4
+# Table names from app/generation/rag/store/models.py (Session 10 multi-index).
+
+date: 2026-08-04
+
+          t           | count
+----------------------+-------
+ budget_chunks        |  1577
+ transcript_chunks    |    11
+ technical_doc_chunks |     8
+
+# Primary retrieval surface for from-transcript / historical tasks is budget_chunks.
+# count > 0 ⇒ safe to run the real estimate smoke (Fase B/C).

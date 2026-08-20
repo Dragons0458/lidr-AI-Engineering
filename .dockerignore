@@ -1,6 +1,8 @@
 .git
 .gitignore
 .env
+.streamlit
+.streamlit/secrets.toml
 .venv
 venv
 __pycache__
@@ -15,3 +17,12 @@ build
 .vscode
 README.md
 tests
+evals
+planning
+exercises
+docs
+.github
+*.md
+!pyproject.toml
+streamlit_ui/data/*.db
+streamlit_ui/data/**/*.db
