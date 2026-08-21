@@ -103,20 +103,32 @@ def _is_reasoning_capability_error(exc: Exception) -> bool:
 async def _create_response(
     client: Any, *, summary_enabled: bool, **kwargs: Any
 ) -> tuple[Any, bool]:
-    reasoning = {"effort": kwargs.pop("reasoning_effort")}
+    reasoning_effort = kwargs.pop("reasoning_effort")
+    reasoning = {"effort": reasoning_effort}
     if summary_enabled:
         reasoning["summary"] = "auto"
     try:
         response = await client.responses.create(reasoning=reasoning, **kwargs)
         return response, summary_enabled
     except Exception as exc:
-        if not summary_enabled or not _is_summary_capability_error(exc):
-            raise
-        log.warning("agent_reasoning_summary_degraded")
-        response = await client.responses.create(
-            reasoning={"effort": reasoning["effort"]}, **kwargs
-        )
-        return response, False
+        if summary_enabled and _is_summary_capability_error(exc):
+            log.warning("agent_reasoning_summary_degraded")
+            try:
+                response = await client.responses.create(
+                    reasoning={"effort": reasoning_effort}, **kwargs
+                )
+                return response, False
+            except Exception as nested:
+                if not _is_reasoning_capability_error(nested):
+                    raise
+                log.warning("agent_reasoning_param_dropped", model=kwargs.get("model"))
+                response = await client.responses.create(**kwargs)
+                return response, False
+        if _is_reasoning_capability_error(exc):
+            log.warning("agent_reasoning_param_dropped", model=kwargs.get("model"))
+            response = await client.responses.create(**kwargs)
+            return response, False
+        raise
 
 
 async def run_estimation_agent(
