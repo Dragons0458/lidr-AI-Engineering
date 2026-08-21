@@ -1,0 +1,13 @@
+Reunión de descubrimiento — Proyecto "Nexo Salud" (telemedicina)
+Cliente: Laura Vendrell (Dirección Clínica) y Oriol Cases (Sistemas), Hospital Comarcal de la Plana
+Fecha: 12 de marzo de 2025. Acta tomada por el PM.
+
+Laura: Necesitamos una plataforma de telemedicina para el hospital regional. Los pacientes tienen que pedir cita online, cancelar y reprogramar, y los médicos ver la agenda del día. Hoy eso se hace por teléfono y se pierde mucho tiempo.
+
+Oriol: Además de las citas, hace falta mensajería segura médico-paciente. Nada de WhatsApp: hilo auditado, adjuntos de informes, y que quede traza. Similar a un portal de paciente, pero con el canal clínico encima.
+
+Laura: El segundo bloque es monitorización remota. Tenemos tensiómetros y pulsioxímetros de dos proveedores. Hay que ingerir lecturas de esos dispositivos y disparar alertas clínicas cuando un valor se sale de rango. No es un data warehouse: es ingestión más reglas de alerta.
+
+Oriol: Cumplimiento de datos de salud tipo HIPAA-like / RGPD sanitario. Integración con el HIS existente más adelante, pero el MVP es citas, mensajería y dispositivos. Stack cloud-native, equipo mixto backend y frontend, horizonte 6-9 meses.
+
+Laura: Si habéis estimado algo parecido en salud (portal de paciente, dispositivos, alertas), usadlo de referencia. No queremos inventar horas.

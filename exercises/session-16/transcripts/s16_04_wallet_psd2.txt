@@ -1,0 +1,11 @@
+Reunión de descubrimiento — Proyecto "Cartera Pyme" (wallet + PSD2)
+Cliente: Ana Riera (PM), CTO del cliente (FintechCorp) y Lead de Backend
+Fecha: 14 de febrero de 2024. Acta tomada por el PM.
+
+CTO: Confirmamos el alcance de la app de banca móvil para pymes. Lo primero es autenticación OAuth 2.0 con Strong Customer Authentication (SCA) de PSD2 en cada iniciación de pago. Rotación de tokens y revocación de refresh tokens van en el día uno; no es un extra.
+
+Lead: El segundo bloque es el libro mayor. Queremos un ledger de doble partida como fuente de verdad de saldos, con pista de auditoría inmutable y jobs de conciliación. Es el mismo tipo de ledger que montamos en el gateway de pagos anterior.
+
+Ana: El CTO pregunta cuánto cuestan autenticación más ledger, en engineer-days, y cuánto tardaríamos. El lanzamiento es regulado en España bajo supervisión del Banco de España. No hay app de inversiones, ni cripto, ni onboarding KYC de terceros en este MVP.
+
+CTO: Fuera de alcance también el frontend de la sucursal y el core bancario legado: solo el servicio de auth y el ledger de la wallet. Si el corpus tiene un presupuesto de wallet digital para pymes, usadlo. No inventéis un neobanco entero.

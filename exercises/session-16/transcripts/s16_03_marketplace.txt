@@ -1,0 +1,13 @@
+Reunión de descubrimiento — Proyecto "Plaza Mayor" (marketplace)
+Cliente: Núria Bellmunt (Product Owner) y Adrià Soler (Frontend Lead), ShopFlow Retail
+Fecha: 20 de marzo de 2025. Acta tomada por el PM.
+
+Núria: Vamos a modernizar el marketplace. Hoy tenemos un catálogo antiguo en AngularJS y un checkout frágil. El nuevo producto es un marketplace de moda con vendedores terceros: búsqueda facetada de producto, carrito y un checkout responsive. Pagos los resuelve un PSP que ya tenemos; no entra Stripe Connect en este alcance.
+
+Adrià: El catálogo tiene que buscar rápido (filtros de talla, color, marca, precio) y el checkout tiene que funcionar bien en móvil. Eso es el núcleo. Encima quieren recomendaciones personalizadas según el historial de navegación, no solo "los más vendidos".
+
+Núria: Marketing pide además un constructor de landing pages para campañas (rebajas, drops de temporada). No es un CMS general: es armar aterrizajes de campaña sobre el catálogo.
+
+Adrià: Stack previsto React en storefront. El backend de catálogo y checkout lo rehacemos. Sector ecommerce, mercado España, equipo de 5 ingenieros. Fuera de alcance: app nativa, ERP, y onboarding KYC de vendedores.
+
+Núria: Si hay presupuestos nuestros de marketplace o retail con catálogo, checkout, recomendaciones o campañas, anclad la estimación ahí. No extrapoléis a un marketplace "de todo".

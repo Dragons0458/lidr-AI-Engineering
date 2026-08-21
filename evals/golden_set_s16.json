@@ -1,0 +1,85 @@
+{
+  "description": "Session 16 production golden set — grounded estimation quality + safety floor. Units are engineer-days (HOURS_PER_DAY=8). Numbers are NOT guessed: each non-abstention case sums analogous component estimated_hours from data/budgets_sample.json after choosing the budgets the brief should retrieve, then expected_engineer_days = round(hours/8) and acceptable_range = [round(0.6×expected), round(1.5×expected)]. The band is asymmetric because under-estimating hurts more than over-estimating. See exercises/session-16/evidence/01_anclaje_golden_set.md for the audit trail.",
+  "corpus": "data/budgets_sample.json",
+  "units": "engineer_days",
+  "hours_per_day": 8,
+  "cases": [
+    {
+      "id": "S16-01",
+      "title": "Portal de proveedores (precedentes claros)",
+      "difficulty": "easy",
+      "transcript_path": "exercises/session-14/sample_transcript_happy_path.txt",
+      "expected_engineer_days": 61,
+      "acceptable_range": [37, 92],
+      "expected_sources_include": ["S07-FIN-001", "S07-HLT-001", "S07-FIN-002"],
+      "expect_abstention": false,
+      "notes": "No SAP/ERP analog exists in the sample corpus. Anchored on auth-api 120h (S07-FIN-001) + patient-portal 255h (S07-HLT-001, closest portal) + advisor-dashboard 115h (S07-FIN-002, reports). 490h → 61 days. See 01_anclaje_golden_set.md."
+    },
+    {
+      "id": "S16-02",
+      "title": "Telemedicina (citas, mensajería, dispositivos)",
+      "difficulty": "easy",
+      "transcript_path": "exercises/session-16/transcripts/s16_02_telemedicine.txt",
+      "expected_engineer_days": 68,
+      "acceptable_range": [41, 102],
+      "expected_sources_include": ["S07-HLT-001", "S07-HLT-002"],
+      "expect_abstention": false,
+      "notes": "Full S07-HLT-001 (120+135=255h) + full S07-HLT-002 (150+140=290h) = 545h → 68 days. Sector healthcare is well represented."
+    },
+    {
+      "id": "S16-03",
+      "title": "Marketplace ecommerce (catálogo, checkout, recs, campañas)",
+      "difficulty": "medium-high",
+      "transcript_path": "exercises/session-16/transcripts/s16_03_marketplace.txt",
+      "expected_engineer_days": 67,
+      "acceptable_range": [40, 101],
+      "expected_sources_include": ["S07-ECO-001", "S07-ECO-004"],
+      "expect_abstention": false,
+      "notes": "S07-ECO-001 catalog-search 140h + checkout-ui 150h and S07-ECO-004 recommendations 135h + campaign-builder 110h = 535h → 67 days. Two overlapping ecommerce budgets."
+    },
+    {
+      "id": "S16-04",
+      "title": "Wallet Pyme + PSD2 (auth OAuth/SCA + ledger)",
+      "difficulty": "medium",
+      "transcript_path": "exercises/session-16/transcripts/s16_04_wallet_psd2.txt",
+      "expected_engineer_days": 35,
+      "acceptable_range": [21, 53],
+      "expected_sources_include": ["S07-FIN-001"],
+      "expect_abstention": false,
+      "notes": "Derived from data/transcripts_sample.json TR-2024-001. Full S07-FIN-001: auth-api 120h + payment-ledger 160h = 280h → 35 days. Finance + regulation, single budget analog."
+    },
+    {
+      "id": "S16-05",
+      "title": "Escala fuera del rango histórico (TITÁN)",
+      "difficulty": "edge",
+      "transcript_path": "exercises/session-14/edge_cases/out_of_historical_range.txt",
+      "expected_engineer_days": 29,
+      "acceptable_range": [17, 44],
+      "expected_sources_include": ["S07-FIN-001"],
+      "expect_abstention": false,
+      "notes": "Must ESTIMATE (not abstain) with explicit assumptions and low/medium confidence. Analog hours only: auth-api 120h + advisor-dashboard 115h = 235h → 29 days. A confident extrapolation to thousands of days fails the band — that is the point."
+    },
+    {
+      "id": "S16-06",
+      "title": "Sin precedente (metrología cuántica)",
+      "difficulty": "abstention",
+      "transcript_path": "exercises/session-14/edge_cases/no_precedent.txt",
+      "expected_engineer_days": 0,
+      "acceptable_range": [0, 0],
+      "expected_sources_include": [],
+      "expect_abstention": true,
+      "notes": "Safety floor. RAG should return confidence=insufficient. Graph has no explicit abstention — harness uses a proxy (grounded_task_ratio==0 or low+no matches) labelled abstention_signal=proxy. A graph FAIL here is a finding for the live session, not a harness bug."
+    },
+    {
+      "id": "S16-07",
+      "title": "Brief vacío / abstención blanda (NIEBLA)",
+      "difficulty": "soft-abstention",
+      "transcript_path": "exercises/session-14/edge_cases/low_confidence.txt",
+      "expected_engineer_days": 0,
+      "acceptable_range": [0, 0],
+      "expected_sources_include": [],
+      "expect_abstention": true,
+      "notes": "Empty brief ('algo de software'). Pass = abstained. If the system invents a full estimate with high confidence, that is a safety failure worth taking to the live session."
+    }
+  ]
+}
