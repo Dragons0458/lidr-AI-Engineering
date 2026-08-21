@@ -135,6 +135,9 @@ class Settings(BaseSettings):
     SUPERVISOR_COMPETITION_CONSERVATIVE_MODEL: str | None = None  # None → AGENT_MODEL
     SUPERVISOR_COMPETITION_AGGRESSIVE_MODEL: str | None = None  # None → AGENT_MODEL
     SUPERVISOR_PERSISTENCE_ENABLED: bool = False
+    # --- Session 16: quality + observability ---
+    METRICS_ENABLED: bool = True
+    METRICS_RETENTION_DAYS: int = 30
     # --- Session 6: ingestion + persistence + PII ---
     DATABASE_URL: str = (
         "postgresql+psycopg://estimator:estimator@localhost:5433/estimator"

@@ -26,6 +26,10 @@ wheels/
 evals/stress/fixtures/attach_*.pdf
 evals/stress/results_smoke.csv
 
+# Session 16 eval harness output (local reruns). The committed baseline stays tracked.
+evals/reports/eval_s16_*.json
+evals/reports/eval_s16_*.md
+
 # Session planning docs (course alignment)
 planning/
 

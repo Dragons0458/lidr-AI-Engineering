@@ -1,0 +1,462 @@
+{
+  "run_id": "14071272",
+  "label": "baseline-s16",
+  "started_at": "2026-08-21T21:21:52.728016Z",
+  "finished_at": "2026-08-21T21:29:15.555600Z",
+  "golden_set": {
+    "path": "evals/golden_set_s16.json",
+    "sha256": "35d3c3c503bc799e84edece414cb0a2a37808f1227c0c503d469ff3f5226f41b",
+    "cases": 7,
+    "selected": [
+      "S16-01",
+      "S16-02",
+      "S16-03",
+      "S16-04",
+      "S16-05",
+      "S16-06",
+      "S16-07"
+    ]
+  },
+  "environment": {
+    "base_url": "http://127.0.0.1:8000",
+    "generation_model": null,
+    "app_env": null,
+    "models": {
+      "PRIMARY_MODEL": "gemini/gemini-2.5-flash",
+      "FALLBACK_MODEL": "gpt-4o-mini",
+      "CRITIC_MODEL": "gpt-4o-mini",
+      "COMPRESSION_MODEL": "gemini/gemini-2.5-flash",
+      "PROPOSITIONAL_CHUNKER_MODEL": "gpt-4o-mini",
+      "CONTEXTUAL_CHUNKER_MODEL": "claude-sonnet-4-5",
+      "HALLUCINATION_JUDGE_MODEL": "gpt-5-mini",
+      "AUGMENTATION_MODEL": "gpt-5-mini"
+    },
+    "retrieval_config": {
+      "retrieval": {
+        "RETRIEVAL_SEARCH_MODE": {
+          "effective": "vector",
+          "default": "vector",
+          "overridden": false
+        },
+        "RERANKER_ENABLED": {
+          "effective": false,
+          "default": false,
+          "overridden": false
+        },
+        "RETRIEVAL_ROUTING_ENABLED": {
+          "effective": true,
+          "default": true,
+          "overridden": false
+        },
+        "QUERY_TRANSFORM_ENABLED": {
+          "effective": true,
+          "default": true,
+          "overridden": false
+        },
+        "TEMPORAL_DECAY_ENABLED": {
+          "effective": false,
+          "default": false,
+          "overridden": false
+        },
+        "TASK_HOURS_TOP_K": {
+          "effective": 5,
+          "default": 5,
+          "overridden": false
+        },
+        "TASK_HOURS_DISTANCE_THRESHOLD": {
+          "effective": 0.45,
+          "default": 0.45,
+          "overridden": false
+        },
+        "HALLUCINATION_GATE_ENABLED": {
+          "effective": true,
+          "default": true,
+          "overridden": false
+        },
+        "AUGMENTATION_ENABLED": {
+          "effective": true,
+          "default": true,
+          "overridden": false
+        },
+        "SYNTHESIS_ENABLED": {
+          "effective": true,
+          "default": true,
+          "overridden": false
+        }
+      },
+      "reranker_model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+    }
+  },
+  "arms": {
+    "rag": {
+      "arm": "rag",
+      "skipped": false,
+      "skip_reason": null,
+      "n_cases": 7,
+      "n_estimation": 5,
+      "n_abstention": 2,
+      "n_passed": 0,
+      "n_failed": 7,
+      "n_throttled": 0,
+      "n_error": 0,
+      "within_range_rate": 0.0,
+      "mean_absolute_error": 440.4,
+      "abstention_correct": false,
+      "mean_latency_ms": 12974.749285858186,
+      "p95_latency_ms": 15996.651250003197,
+      "p95_n": 7,
+      "error_rate": 0.0,
+      "abstention_rate": 0.0,
+      "source_recall": 0.4,
+      "total_cost_usd": 0.010009900000000002,
+      "mean_cost_usd": 0.0014299857142857145,
+      "cache_hit_rate": null,
+      "evaluations": [
+        {
+          "case_id": "S16-01",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 61,
+          "predicted_engineer_days": 352,
+          "acceptable_range": [
+            37,
+            92
+          ],
+          "abs_error": 291.0,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": false,
+          "latency_ms": 13075.316292000934,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0014315999999999999,
+          "notes": "predicted 352 outside [37, 92]"
+        },
+        {
+          "case_id": "S16-02",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 68,
+          "predicted_engineer_days": 410,
+          "acceptable_range": [
+            41,
+            102
+          ],
+          "abs_error": 342.0,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": false,
+          "latency_ms": 11821.458209000411,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0013319,
+          "notes": "predicted 410 outside [41, 102]"
+        },
+        {
+          "case_id": "S16-03",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 67,
+          "predicted_engineer_days": 710,
+          "acceptable_range": [
+            40,
+            101
+          ],
+          "abs_error": 643.0,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": true,
+          "latency_ms": 10650.805458000832,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0012942000000000001,
+          "notes": "predicted 710 outside [40, 101]"
+        },
+        {
+          "case_id": "S16-04",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 35,
+          "predicted_engineer_days": 670,
+          "acceptable_range": [
+            21,
+            53
+          ],
+          "abs_error": 635.0,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": true,
+          "latency_ms": 15497.927166998124,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.001672,
+          "notes": "predicted 670 outside [21, 53]"
+        },
+        {
+          "case_id": "S16-05",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 29,
+          "predicted_engineer_days": 320,
+          "acceptable_range": [
+            17,
+            44
+          ],
+          "abs_error": 291.0,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": false,
+          "latency_ms": 12623.245750000933,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0013814,
+          "notes": "predicted 320 outside [17, 44]"
+        },
+        {
+          "case_id": "S16-06",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 0,
+          "predicted_engineer_days": 264,
+          "acceptable_range": [
+            0,
+            0
+          ],
+          "abs_error": null,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": null,
+          "latency_ms": 15996.651250003197,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0015938000000000003,
+          "notes": "expected abstention, system estimated"
+        },
+        {
+          "case_id": "S16-07",
+          "arm": "rag",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 0,
+          "predicted_engineer_days": 494,
+          "acceptable_range": [
+            0,
+            0
+          ],
+          "abs_error": null,
+          "abstained": false,
+          "abstention_signal": "explicit",
+          "source_hit": null,
+          "latency_ms": 11157.840875002876,
+          "llm_calls": 1,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0013050000000000002,
+          "notes": "expected abstention, system estimated"
+        }
+      ]
+    },
+    "graph": {
+      "arm": "graph",
+      "skipped": false,
+      "skip_reason": null,
+      "n_cases": 7,
+      "n_estimation": 5,
+      "n_abstention": 2,
+      "n_passed": 1,
+      "n_failed": 6,
+      "n_throttled": 0,
+      "n_error": 0,
+      "within_range_rate": 0.0,
+      "mean_absolute_error": 38.0,
+      "abstention_correct": false,
+      "mean_latency_ms": 38230.754648714144,
+      "p95_latency_ms": 54009.23845899888,
+      "p95_n": 7,
+      "error_rate": 0.0,
+      "abstention_rate": 0.2857142857142857,
+      "source_recall": 0.0,
+      "total_cost_usd": 0.0137443,
+      "mean_cost_usd": 0.0019634714285714284,
+      "cache_hit_rate": null,
+      "evaluations": [
+        {
+          "case_id": "S16-01",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 61,
+          "predicted_engineer_days": null,
+          "acceptable_range": [
+            37,
+            92
+          ],
+          "abs_error": null,
+          "abstained": true,
+          "abstention_signal": "proxy",
+          "source_hit": false,
+          "latency_ms": 22731.601957999374,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0019698,
+          "notes": "abstained on an estimation case"
+        },
+        {
+          "case_id": "S16-02",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 68,
+          "predicted_engineer_days": 12,
+          "acceptable_range": [
+            41,
+            102
+          ],
+          "abs_error": 56.0,
+          "abstained": false,
+          "abstention_signal": "proxy",
+          "source_hit": false,
+          "latency_ms": 42199.90862499981,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.00190205,
+          "notes": "predicted 12 outside [41, 102]"
+        },
+        {
+          "case_id": "S16-03",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 67,
+          "predicted_engineer_days": 16,
+          "acceptable_range": [
+            40,
+            101
+          ],
+          "abs_error": 51.0,
+          "abstained": false,
+          "abstention_signal": "proxy",
+          "source_hit": false,
+          "latency_ms": 37616.59249999866,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0019752,
+          "notes": "predicted 16 outside [40, 101]"
+        },
+        {
+          "case_id": "S16-04",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 35,
+          "predicted_engineer_days": 16,
+          "acceptable_range": [
+            21,
+            53
+          ],
+          "abs_error": 19.0,
+          "abstained": false,
+          "abstention_signal": "proxy",
+          "source_hit": false,
+          "latency_ms": 30337.10208300181,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0021493000000000003,
+          "notes": "predicted 16 outside [21, 53]"
+        },
+        {
+          "case_id": "S16-05",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 29,
+          "predicted_engineer_days": 3,
+          "acceptable_range": [
+            17,
+            44
+          ],
+          "abs_error": 26.0,
+          "abstained": false,
+          "abstention_signal": "proxy",
+          "source_hit": false,
+          "latency_ms": 35907.493040998816,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.00186155,
+          "notes": "predicted 3 outside [17, 44]"
+        },
+        {
+          "case_id": "S16-06",
+          "arm": "graph",
+          "verdict": "failed",
+          "passed": false,
+          "expected_engineer_days": 0,
+          "predicted_engineer_days": 4,
+          "acceptable_range": [
+            0,
+            0
+          ],
+          "abs_error": null,
+          "abstained": false,
+          "abstention_signal": "proxy",
+          "source_hit": null,
+          "latency_ms": 44813.34587500169,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.00200495,
+          "notes": "expected abstention, system estimated"
+        },
+        {
+          "case_id": "S16-07",
+          "arm": "graph",
+          "verdict": "passed",
+          "passed": true,
+          "expected_engineer_days": 0,
+          "predicted_engineer_days": null,
+          "acceptable_range": [
+            0,
+            0
+          ],
+          "abs_error": null,
+          "abstained": true,
+          "abstention_signal": "proxy",
+          "source_hit": null,
+          "latency_ms": 54009.23845899888,
+          "llm_calls": 4,
+          "http_status": 200,
+          "error": null,
+          "cost_usd": 0.0018814500000000002,
+          "notes": ""
+        }
+      ]
+    }
+  },
+  "ab": {
+    "quality_delta": 0.0,
+    "cost_ratio": 0.7282946385046895,
+    "latency_ratio": 0.33937988943921044,
+    "abstention_gap": [
+      "S16-01",
+      "S16-07"
+    ],
+    "verdict": null
+  }
+}

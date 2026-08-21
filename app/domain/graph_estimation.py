@@ -380,6 +380,7 @@ async def resume_graph_run(
             "graph_resume_failed",
             estimation_id=estimation_id,
             error_type=type(exc).__name__,
+            error=str(exc)[:300],
         )
         raise GraphEstimationError("Failed to resume the estimate.") from exc
     return snapshot_to_run_state(estimation_id, snapshot)

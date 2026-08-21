@@ -55,6 +55,9 @@ with col1:
     st.page_link("pages/10_Supervisor.py", label="Supervisor", icon="🧭")
     st.caption("Wizard S14: supervisor LLM + privilegio + gate por señal.")
 
+    st.page_link("pages/11_Observabilidad.py", label="Observabilidad", icon="📈")
+    st.caption("Sesión 16: latencia p95, coste por petición y tasa de error.")
+
 with col2:
     st.page_link("pages/2_Conversacion.py", label="Conversación", icon="💬")
     st.caption("Sesiones, adjuntos, memoria comprimida y Actor-Critic-Boss.")

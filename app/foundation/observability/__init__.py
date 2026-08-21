@@ -1,1 +1,1 @@
-"""Session 13 observability helpers."""
+"""Observability helpers (Logfire bootstrap + Session 16 usage accumulator)."""

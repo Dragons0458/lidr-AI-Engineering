@@ -15,11 +15,84 @@ from litellm import completion as litellm_completion
 
 from app.foundation.llm.pricing import calculate_cost
 from app.foundation.llm.runtime_config import RuntimeModelConfig
+from app.foundation.observability.usage import add_llm_call
 from app.generation.cag.exact import EstimationCache
 
 log = structlog.get_logger()
 T = TypeVar("T", bound=BaseModel)
 _instructor_clients: dict[Mode, Any] = {}
+
+
+def _usage_from_any(obj: Any) -> tuple[int, int, int]:
+    """Best-effort token usage from a LiteLLM / Instructor response object."""
+    if obj is None:
+        return 0, 0, 0
+    raw = obj
+    for attr in ("_raw_response", "_completion", "_response", "raw"):
+        candidate = getattr(obj, attr, None)
+        if candidate is not None:
+            raw = candidate
+            break
+    usage = getattr(raw, "usage", None)
+    if usage is None and isinstance(raw, dict):
+        usage = raw.get("usage")
+    if usage is None:
+        return 0, 0, 0
+    if isinstance(usage, dict):
+        prompt = int(usage.get("prompt_tokens") or usage.get("input_tokens") or 0)
+        completion = int(
+            usage.get("completion_tokens") or usage.get("output_tokens") or 0
+        )
+        total = int(usage.get("total_tokens") or (prompt + completion))
+        return prompt, completion, total
+    prompt = int(getattr(usage, "prompt_tokens", 0) or 0)
+    completion = int(getattr(usage, "completion_tokens", 0) or 0)
+    total = int(getattr(usage, "total_tokens", prompt + completion) or 0)
+    return prompt, completion, total
+
+
+def _record_llm_usage(
+    *,
+    model: str,
+    prompt_tokens: int,
+    completion_tokens: int,
+    cost_usd: float,
+    cache_hit: bool = False,
+) -> None:
+    add_llm_call(
+        model=model,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+        cost_usd=cost_usd,
+        cache_hit=cache_hit,
+    )
+
+
+def _structured_meta(
+    instance: Any, resolved_model: str, latency_ms: int
+) -> dict[str, Any]:
+    prompt, completion, total = _usage_from_any(instance)
+    model_name = _normalise_model_name(resolved_model)
+    cost = calculate_cost(model_name, prompt, completion)
+    cost_usd = float(cost["total"]) if cost else 0.0
+    _record_llm_usage(
+        model=model_name,
+        prompt_tokens=prompt,
+        completion_tokens=completion,
+        cost_usd=cost_usd,
+    )
+    return {
+        "model": model_name,
+        "provider": provider_from_model(resolved_model),
+        "latency_ms": latency_ms,
+        "usage": {
+            "input_tokens": prompt,
+            "output_tokens": completion,
+            "total_tokens": total,
+        },
+        "cost_usd": cost_usd,
+        "cache_hit": False,
+    }
 
 
 def structured_instructor_mode(model: str) -> Mode:
@@ -179,6 +252,14 @@ class LLMWrapper:
         if self.cache_enabled and use_cache:
             cached = self.cache.get(cache_key)
             if cached:
+                cached_model = cached.get("model") or model
+                _record_llm_usage(
+                    model=_normalise_model_name(cached_model),
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    cost_usd=0.0,
+                    cache_hit=True,
+                )
                 return {**cached, "cache_hit": True}
 
         kwargs = self._build_call_kwargs(
@@ -280,22 +361,12 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
-        meta = {
-            "model": _normalise_model_name(resolved_model),
-            "provider": provider_from_model(resolved_model),
-            "latency_ms": latency_ms,
-            "usage": {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
-            },
-            "cost_usd": 0.0,
-            "cache_hit": False,
-        }
+        meta = _structured_meta(instance, resolved_model, latency_ms)
         log.info(
             "llm_structured_call_completed",
             model=meta["model"],
             latency_ms=latency_ms,
+            cost_usd=meta["cost_usd"],
         )
         return instance, meta
 
@@ -354,22 +425,12 @@ class LLMWrapper:
             raise
 
         latency_ms = int((time.perf_counter() - started_at) * 1000)
-        meta = {
-            "model": _normalise_model_name(resolved_model),
-            "provider": provider_from_model(resolved_model),
-            "latency_ms": latency_ms,
-            "usage": {
-                "input_tokens": 0,
-                "output_tokens": 0,
-                "total_tokens": 0,
-            },
-            "cost_usd": 0.0,
-            "cache_hit": False,
-        }
+        meta = _structured_meta(instance, resolved_model, latency_ms)
         log.info(
             "llm_structured_call_completed",
             model=meta["model"],
             latency_ms=latency_ms,
+            cost_usd=meta["cost_usd"],
         )
         return instance, meta
 
@@ -515,6 +576,12 @@ class LLMWrapper:
         )
         cost = calculate_cost(resolved_model, input_tokens, output_tokens)
         cost_usd = float(cost["total"]) if cost else 0.0
+        _record_llm_usage(
+            model=resolved_model,
+            prompt_tokens=input_tokens,
+            completion_tokens=output_tokens,
+            cost_usd=cost_usd,
+        )
 
         return {
             "estimation": (choice.message.content or ""),

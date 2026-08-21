@@ -1,0 +1,23 @@
+Session 16 — first real case (Fase 2)
+Captured 2026-08-21 against the live stack. Spends tokens.
+
+Command:
+
+  uv run python scripts/run_eval_s16.py --arm rag --case S16-01 --label primer-caso \
+    --base-url http://127.0.0.1:8000 --api-key "$ESTIMATE_API_KEY" --out evals/reports/
+
+Stdout:
+
+  golden set ok: 7 cases, 2 abstention, sha256=35d3c3c503bc…
+  run_id=c4f640d0 arms=rag cases=['S16-01']
+  This spends real LLM tokens. Ctrl-C to abort.
+
+  == arm rag ==
+    S16-01 [rag] expected=61 range=(37, 92) predicted=348 abstained=False (explicit) → FAILED  (15877 ms)
+
+  wrote evals/reports/eval_s16_20260821-211606.json
+  wrote evals/reports/eval_s16_20260821-211606.md
+
+The RAG arm answered (confidence was not insufficient) but the number is far
+above the anchored band: 348 engineer-days vs expected 61 [37, 92].
+The later full A/B run reproduced the same miss (predicted=352).
