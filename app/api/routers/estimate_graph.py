@@ -31,6 +31,7 @@ from app.domain.schemas.graph_estimation import (
 )
 from app.generation.agentic.graph.activity import GraphActivityLog
 from app.generation.rag.observability import log_stage
+from app.foundation.observability.usage import set_outcome
 
 log = structlog.get_logger()
 router = APIRouter(prefix="/v1/estimate/agent", tags=["estimate-agent-graph"])
@@ -44,6 +45,30 @@ def get_graph_runtime(request: Request):
 def get_multiagent_deps(request: Request):
     """Resolve the lifespan-owned multi-agent dependency bundle."""
     return getattr(request.app.state, "multiagent_deps", None)
+
+
+def _record_graph_outcome(state: GraphRunState) -> None:
+    """Propagate confidence / proxy-abstention into the request usage object."""
+    estimate = state.estimate if isinstance(state.estimate, dict) else {}
+    confidence = estimate.get("confidence")
+    ratio = estimate.get("grounded_ratio")
+    if ratio is None:
+        ratio = estimate.get("grounded_task_ratio")
+    abstained = False
+    if ratio == 0.0:
+        abstained = True
+    elif confidence == "low":
+        tasks: list[dict] = []
+        for module in estimate.get("modules") or []:
+            tasks.extend(module.get("tasks") or [])
+        if not tasks:
+            tasks = [row for row in (state.task_hours or []) if isinstance(row, dict)]
+        abstained = not any(bool(task.get("has_match")) for task in tasks)
+    set_outcome(
+        confidence=confidence,
+        abstained=abstained,
+        grounded_ratio=float(ratio) if ratio is not None else None,
+    )
 
 
 @router.post(
@@ -64,11 +89,13 @@ async def estimate_graph(
             get_request_id(request),
             estimation_id=payload.estimation_id,
         ):
-            return await start_graph_run(
+            return_value = await start_graph_run(
                 payload.estimation_id,
                 payload.transcript,
                 runtime,
             )
+            _record_graph_outcome(return_value)
+            return return_value
     except GraphRuntimeUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except GraphEstimationError as exc:
@@ -101,11 +128,13 @@ async def resume_graph(
             get_request_id(request),
             estimation_id=estimation_id,
         ):
-            return await resume_graph_run(
+            return_value = await resume_graph_run(
                 estimation_id,
                 payload.decision,
                 runtime,
             )
+            _record_graph_outcome(return_value)
+            return return_value
     except GraphRuntimeUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except GraphConflictError as exc:
@@ -141,7 +170,9 @@ async def graph_state(
             get_request_id(request),
             estimation_id=estimation_id,
         ):
-            return await read_graph_state(estimation_id, runtime)
+            return_value = await read_graph_state(estimation_id, runtime)
+            _record_graph_outcome(return_value)
+            return return_value
     except GraphRuntimeUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except GraphNotFoundError as exc:

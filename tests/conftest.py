@@ -92,6 +92,18 @@ def disable_session5_env_features(monkeypatch) -> None:
 
 
 @pytest.fixture(autouse=True)
+def disable_s16_metrics_persist() -> None:
+    """Unit tests must not INSERT into request_metrics (no table, no Postgres)."""
+    settings = get_settings()
+    previous = getattr(settings, "METRICS_ENABLED", False)
+    settings.METRICS_ENABLED = False
+    try:
+        yield
+    finally:
+        settings.METRICS_ENABLED = previous
+
+
+@pytest.fixture(autouse=True)
 def isolated_llm_wrapper(monkeypatch) -> None:
     """In-memory Redis and a wrapper with cache disabled for deterministic unit tests."""
     from app.dependencies import (
@@ -137,10 +149,6 @@ def isolated_llm_wrapper(monkeypatch) -> None:
         "app.domain.estimation_service.get_semantic_cache", lambda: None
     )
     monkeypatch.setattr("app.domain.estimation_service.get_cache", lambda: cache)
-    monkeypatch.setattr(
-        "app.domain.estimation_service.settings.INPUT_GUARDRAILS_ENABLED",
-        False,
-    )
     yield
     get_cache.cache_clear()
     get_llm_wrapper.cache_clear()

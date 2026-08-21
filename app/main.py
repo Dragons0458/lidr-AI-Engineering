@@ -1,5 +1,6 @@
 from contextlib import asynccontextmanager
 import logging
+import time
 from uuid import uuid4
 
 from fastapi import Depends, FastAPI, Request
@@ -20,6 +21,7 @@ from app.api.routers.estimate_stages import router as estimate_stages_router
 from app.api.routers.estimate_supervisor import router as estimate_supervisor_router
 from app.api.routers.estimate_tasks import router as estimate_tasks_router
 from app.api.routers.health import router as health_router
+from app.api.routers.observability import router as observability_router
 from app.api.routers.retrieval import router as retrieval_router
 from app.api.routers.retrieval_advanced import router as retrieval_advanced_router
 from app.api.search import router as search_router
@@ -32,6 +34,11 @@ from app.foundation.observability.logfire_setup import (
     instrument_fastapi_app,
     instrument_http_clients,
 )
+from app.foundation.observability.metrics import (
+    metrics_from_usage,
+    record_request_metrics,
+)
+from app.foundation.observability.usage import start_usage
 from app.foundation.persistence.langgraph import (
     close_langgraph_runtime,
     open_langgraph_runtime,
@@ -188,7 +195,8 @@ API para generar estimaciones de proyectos de software a partir de transcripcion
 - POST /v1/estimate/agent/graph/{estimation_id}/proposal → Propuesta comercial (S13)
 - GET /api/v1/config/models → Configuración runtime de modelos
 - GET /api/v1/config/retrieval → Configuración runtime de recuperación (S10)
-- GET /health → Liveness (sin LLM ni dependencias)
+- GET /v1/observability/metrics → Resumen de latencia / coste / errores (S16)
+- GET /v1/observability/requests → Filas por petición (join del harness S16)
 - GET /health/ready → Readiness (Postgres + Redis)
 - POST /sessions → Crear sesión en memoria
 - POST /sessions/{session_id}/estimate → Estimar usando sesión y adjuntos
@@ -215,6 +223,68 @@ app.add_middleware(
 
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, rate_limit_exceeded_handler)
+
+_METRICS_SKIP_PREFIXES = (
+    "/health",
+    "/docs",
+    "/redoc",
+    "/openapi.json",
+    "/v1/observability",
+)
+_METRICS_PREFIXES = ("/api/v1/estimate", "/v1/estimate")
+
+
+def _should_record_metrics(path: str) -> bool:
+    """Instrument estimate routes only; never health, docs, or the metrics API."""
+    if any(
+        path == prefix or path.startswith(f"{prefix}/")
+        for prefix in _METRICS_SKIP_PREFIXES
+    ):
+        return False
+    if path.startswith("/health"):
+        return False
+    return any(
+        path == prefix or path.startswith(f"{prefix}/") or path.startswith(prefix)
+        for prefix in _METRICS_PREFIXES
+    )
+
+
+@app.middleware("http")
+async def metrics_middleware(request: Request, call_next):
+    """Inner metrics middleware — runs after ``request_id`` has bound the id.
+
+    Registered *before* ``request_id_middleware`` so Starlette treats request_id
+    as the outer layer (last added = first executed).
+    """
+    path = request.url.path
+    if not _should_record_metrics(path) or not get_settings().METRICS_ENABLED:
+        return await call_next(request)
+
+    usage = start_usage()
+    started = time.perf_counter()
+    status_code = 500
+    error_type = None
+    try:
+        response = await call_next(request)
+        status_code = response.status_code
+        return response
+    except Exception as exc:
+        error_type = type(exc).__name__
+        raise
+    finally:
+        latency_ms = (time.perf_counter() - started) * 1000
+        request_id = getattr(request.state, "request_id", None) or request.headers.get(
+            "X-Request-ID", "unknown"
+        )
+        metric = metrics_from_usage(
+            request_id=str(request_id),
+            route=path,
+            http_status=status_code,
+            latency_ms=latency_ms,
+            usage=usage,
+            error_type=error_type,
+        )
+        record_request_metrics(metric)
 
 
 @app.middleware("http")
@@ -246,3 +316,4 @@ app.include_router(estimate_agent_router)
 app.include_router(estimate_graph_router)
 app.include_router(estimate_supervisor_router)
 app.include_router(corpus_index_router)
+app.include_router(observability_router)

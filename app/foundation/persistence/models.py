@@ -19,7 +19,16 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 
-from sqlalchemy import Index, Integer, String, UniqueConstraint, func
+from sqlalchemy import (
+    Boolean,
+    Float,
+    Index,
+    Integer,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
 from sqlalchemy.types import DateTime
@@ -63,4 +72,36 @@ class IngestionJobRow(Base):
     )
     finished_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+class RequestMetricRow(Base):
+    """One instrumented estimate request (Session 16). No payloads, no secrets."""
+
+    __tablename__ = "request_metrics"
+    __table_args__ = (
+        Index("idx_request_metrics_created_at", "created_at"),
+        Index("idx_request_metrics_request_id", "request_id"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    request_id: Mapped[str] = mapped_column(Text, nullable=False)
+    route: Mapped[str] = mapped_column(Text, nullable=False)
+    http_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    latency_ms: Mapped[float] = mapped_column(Float, nullable=False)
+    llm_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    prompt_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    completion_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    estimated_cost_usd: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    model: Mapped[str | None] = mapped_column(Text, nullable=True)
+    confidence: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    abstained: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    grounded_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cache_hit: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_type: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now()
     )
