@@ -1,52 +1,227 @@
 name: ci
 
 # Offline only. Do NOT run scripts/smoke_test_s15.py here — that is a
-# post-deploy check that calls the real LLM (Session 15 article 06).
+# post-deploy check that calls the real LLM (Session 15).
 
 on:
   push:
     branches: [main, "juan-solano-*"]
   pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  packages: write
 
 jobs:
-  test:
+  changes:
     runs-on: ubuntu-latest
+    outputs:
+      ai-service: ${{ steps.filter.outputs.ai-service }}
+      web: ${{ steps.filter.outputs.web }}
+      deployment: ${{ steps.filter.outputs.deployment }}
     steps:
       - uses: actions/checkout@v4
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            ai-service:
+              - 'app/**'
+              - 'tests/**'
+              - 'alembic/**'
+              - 'scripts/**'
+              - 'pyproject.toml'
+              - 'uv.lock'
+              - 'docs/contract/**'
+              - '.github/workflows/ci.yml'
+            web:
+              - 'streamlit_ui/**'
+              - 'docs/contract/**'
+              - '.github/workflows/ci.yml'
+            deployment:
+              - 'docker-compose*.yml'
+              - 'Dockerfile'
+              - '.dockerignore'
+              - 'deploy/**'
 
-      - name: Install uv
-        uses: astral-sh/setup-uv@v4
+  test:
+    needs: changes
+    if: needs.changes.outputs.ai-service == 'true' || needs.changes.outputs.web == 'true'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: pgvector/pgvector:pg16
+        env:
+          POSTGRES_USER: estimator
+          POSTGRES_PASSWORD: estimator
+          POSTGRES_DB: estimator
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd "pg_isready -U estimator -d estimator"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      OPENAI_API_KEY: sk-test-not-a-real-key
+      APP_ENV: development
+      DATABASE_URL: postgresql+psycopg://estimator:estimator@localhost:5433/estimator
+      ESTIMATE_API_KEY: ci-estimate-key
+      AI_SERVICE_TOKEN: ci-estimate-key
+      RETRIEVAL_API_KEY: ci-retrieval-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
-
+      - name: Install Python
+        run: uv python install 3.11
       - name: Sync dependencies
-        run: uv sync --group dev
-
+        run: uv sync --frozen --all-groups
       - name: Ruff check
         run: uv run ruff check .
-
       - name: Ruff format
         run: uv run ruff format --check .
+      - name: Pytest (offline suite)
+        run: uv run pytest -q -m "not eval and not integration and not slow"
 
-      - name: Pytest (offline unit/api)
-        env:
-          OPENAI_API_KEY: sk-ci-placeholder
-          ESTIMATE_API_KEY: ci-estimate-key
-          AI_SERVICE_TOKEN: ci-estimate-key
-          RETRIEVAL_API_KEY: ci-retrieval-key
-          APP_ENV: development
-        run: >
-          uv run pytest -q
-          tests/test_health.py
-          tests/api/test_service_token.py
-          tests/api/test_security.py
-          tests/unit/api/
-          --ignore=tests/unit/api/test_ingestion_endpoint.py
-
-  image:
+  contract:
+    needs: [changes, test]
+    if: >
+      always()
+      && !contains(needs.*.result, 'failure')
+      && !cancelled()
+      && (needs.changes.outputs.ai-service == 'true'
+          || needs.changes.outputs.web == 'true')
     runs-on: ubuntu-latest
+    env:
+      OPENAI_API_KEY: sk-test-not-a-real-key
+      APP_ENV: development
+      ESTIMATE_API_KEY: ci-estimate-key
+      AI_SERVICE_TOKEN: ci-estimate-key
+      RETRIEVAL_API_KEY: ci-retrieval-key
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+      - run: uv python install 3.11
+      - run: uv sync --frozen --all-groups
+      - name: Check web-consumed OpenAPI contract
+        run: uv run python scripts/check_contract.py
 
-      - name: Build prod-like images
-        run: docker compose -f docker-compose.yml build
+  build:
+    needs: [changes, test, contract]
+    if: >
+      always()
+      && !contains(needs.*.result, 'failure')
+      && !cancelled()
+      && (needs.changes.outputs.ai-service == 'true'
+          || needs.changes.outputs.web == 'true'
+          || needs.changes.outputs.deployment == 'true')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - name: ai-service
+            target: ai-service
+            image: estimador-ai-service
+          - name: web
+            target: web
+            image: estimador-web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - name: Resolve registry namespace
+        id: registry
+        run: |
+          echo "has_owner=${{ vars.GHCR_OWNER != '' }}"
+          echo "has_pat=${{ secrets.GHCR_PAT != '' }}"
+          OWNER="${{ vars.GHCR_OWNER || github.actor }}"
+          echo "owner=${OWNER,,}" >> "$GITHUB_OUTPUT"
+          echo "resolved_namespace=ghcr.io/${OWNER,,}"
+      - name: Log in to GHCR
+        if: >
+          (github.ref == 'refs/heads/main' && github.event_name == 'push')
+          || github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ vars.GHCR_OWNER || github.actor }}
+          password: ${{ secrets.GHCR_PAT || secrets.GITHUB_TOKEN }}
+      - name: Build (and push on main)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: ${{ matrix.target }}
+          push: ${{ (github.ref == 'refs/heads/main' && github.event_name == 'push') || github.event_name == 'workflow_dispatch' }}
+          load: ${{ github.ref != 'refs/heads/main' && github.event_name != 'workflow_dispatch' }}
+          tags: |
+            ghcr.io/${{ steps.registry.outputs.owner }}/${{ matrix.image }}:${{ github.sha }}
+            ghcr.io/${{ steps.registry.outputs.owner }}/${{ matrix.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+
+  deploy:
+    needs: build
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push' && vars.CD_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - name: Deploy over SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          command_timeout: 20m
+          script: |
+            set -euo pipefail
+            cd /opt/estimador-cag
+            git fetch origin
+            git reset --hard origin/main
+            if grep -q '^IMAGE_TAG=' .env; then
+              sed -i "s/^IMAGE_TAG=.*/IMAGE_TAG=${{ github.sha }}/" .env
+            else
+              echo "IMAGE_TAG=${{ github.sha }}" >> .env
+            fi
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml pull -q
+            docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+            docker image prune -af --filter "until=168h"
+      - name: Post-deploy smoke (public surface)
+        env:
+          OPENAI_API_KEY: sk-test-not-a-real-key
+          APP_ENV: development
+        run: |
+          python scripts/smoke_test_s15.py \
+            --base-url "https://${{ vars.APP_DOMAIN }}" \
+            --skip-estimation
+
+# -----------------------------------------------------------------------------
+# TODO(S16) — quality gates. Do not enable in Session 15.
+# These jobs call real models / golden sets and belong on a schedule, not on
+# every push. Cadence: schedule + workflow_dispatch, never the default `test` job.
+#
+# evaluate-golden-set:
+#   runs-on: ubuntu-latest
+#   if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
+#   steps:
+#     - uses: actions/checkout@v4
+#     - run: uv run python scripts/eval_retrieval_s10.py
+#
+# regression-gate:
+#   runs-on: ubuntu-latest
+#   steps:
+#     - run: uv run python scripts/eval_generation_s11.py --gate --config full
+#
+# ab-test:
+#   runs-on: ubuntu-latest
+#   steps:
+#     - run: uv run python scripts/score_ragas_s11.py samples.json
+# -----------------------------------------------------------------------------

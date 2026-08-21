@@ -43,7 +43,7 @@ async def hours(request: Request, payload: TaskHoursRequest) -> TaskHoursResult:
     if get_embedder() is None:
         log.error("stage_failed", stage="task_hours", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     runtime = get_runtime_retrieval_config()

@@ -129,7 +129,7 @@ def test_get_index_job_404(client: TestClient) -> None:
     assert response.status_code == 404
 
 
-def test_service_none_returns_500() -> None:
+def test_service_none_returns_503() -> None:
     app.dependency_overrides[get_corpus_index_service] = lambda: None
     client = TestClient(app)
     try:
@@ -137,7 +137,7 @@ def test_service_none_returns_500() -> None:
             "/embeddings/index/runs",
             json={"documents": [_budget().model_dump()]},
         )
-        assert response.status_code == 500
+        assert response.status_code == 503
     finally:
         app.dependency_overrides.clear()
 

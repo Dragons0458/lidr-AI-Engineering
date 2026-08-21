@@ -43,7 +43,7 @@ async def ingest(
     if service is None:
         log.error("embeddings_ingest_failed", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     log.info(
@@ -96,7 +96,7 @@ def compare(
     if embedder is None:
         log.error("embeddings_compare_failed", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     names = request.strategies or ALL_STRATEGIES

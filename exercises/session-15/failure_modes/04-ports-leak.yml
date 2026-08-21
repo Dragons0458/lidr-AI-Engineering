@@ -1,0 +1,17 @@
+# Session 15 failure-mode fixture 4 — the frontier leaks.
+#
+# Symptom: everything works — that *is* the problem.
+# Cause: `ports: ["8000:8000"]` on `ai-service` publishes the private API
+# on the host. The service token is defence in depth, not a substitute
+# for a closed port.
+#
+# Compare with the real `docker-compose.yml`: the only service with `ports`
+# is `web`. Postgres and Redis stay on `estimador_net`.
+
+services:
+  ai-service:
+    ports:
+      - "8000:8000"
+  web:
+    ports:
+      - "8501:8501"

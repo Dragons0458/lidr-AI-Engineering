@@ -216,13 +216,13 @@ def test_hours_maps_missing_client_to_500(client, monkeypatch):
     )
 
 
-def test_hours_without_embedder_returns_500(client, monkeypatch):
+def test_hours_without_embedder_returns_503(client, monkeypatch):
     monkeypatch.setattr(router, "get_embedder", lambda: None)
     assert (
         client.post(
             "/v1/estimate/agent/hours", json=HOURS_BODY, headers=_headers()
         ).status_code
-        == 500
+        == 503
     )
 
 

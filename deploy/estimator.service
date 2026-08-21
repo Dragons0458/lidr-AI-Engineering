@@ -1,0 +1,21 @@
+[Unit]
+Description=estimador-cag production stack (Compose + Caddy)
+Documentation=https://github.com/Dragons0458/estimador-cag
+Requires=docker.service
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+WorkingDirectory=/opt/estimador-cag
+# Compose derives named-volume prefixes from the project name. Changing it
+# silently points postgres_data at a new empty volume and the corpus vanishes.
+Environment=COMPOSE_PROJECT_NAME=estimador-cag
+EnvironmentFile=-/opt/estimador-cag/.env
+TimeoutStartSec=900
+ExecStart=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --remove-orphans
+ExecStop=/usr/bin/docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+
+[Install]
+WantedBy=multi-user.target

@@ -32,10 +32,49 @@ docker compose -f docker-compose.yml up --build -d
 Smoke E2E post-despliegue (requiere corpus sembrado y clave LLM real; **no** corre en CI):
 
 ```bash
-docker compose -f docker-compose.yml exec web python scripts/smoke_test_s15.py
+docker compose -f docker-compose.yml exec web \
+  python scripts/smoke_test_s15.py \
+    --base-url http://localhost:8501 \
+    --ai-url http://ai-service:8000
 ```
 
-### Modo desarrollo (override automático)
+Contrato UI→API (sin servidor ni LLM):
+
+```bash
+uv run python scripts/check_contract.py
+```
+
+Índice de documentos: [`docs/README.md`](docs/README.md).
+
+## Despliegue en cloud (kit, no ejecutado)
+
+No se aprovisiona EC2 ni dominio en esta sesión. El kit está versionado:
+
+- Override: `docker-compose.yml` + `docker-compose.prod.yml` (Caddy publica 80/443; `web` queda interno).
+- `deploy/Caddyfile`, `deploy/bootstrap.sh`, `deploy/estimator.service`.
+- Guía paso a paso: [`docs/deploy-ec2.md`](docs/deploy-ec2.md).
+- Decisiones y límite de Streamlit sin login: [`docs/decisions.md`](docs/decisions.md).
+
+```bash
+APP_DOMAIN=example.test IMAGE_OWNER=demo \
+  docker compose -f docker-compose.yml -f docker-compose.prod.yml config
+```
+
+Corpus ya pagado (no re-ingerir embeddings): `./scripts/dump_corpus.sh` /
+`./scripts/restore_corpus.sh`.
+
+## CI/CD
+
+Pipeline en [`.github/workflows/ci.yml`](.github/workflows/ci.yml):
+`changes → test → contract → build → deploy`. El job `deploy` está **escrito y
+apagado** (`vars.CD_ENABLED`). Detalle: [`docs/ci-cd.md`](docs/ci-cd.md).
+
+```bash
+uv run pytest -q -m "not eval and not integration and not slow"
+uv run ruff check . && uv run ruff format --check .
+```
+
+## Modo desarrollo (override automático)
 
 `docker-compose.override.yml` publica `8000`/`5433`/`6379`, monta el código y activa `--reload`:
 
@@ -161,6 +200,10 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   sandboxing de escritura (`save_estimate` irreversible, tenencia, diferido).
   API bajo `/v1/estimate/agent/supervisor` (thread `s14:{id}`); Wizard Streamlit
   `pages/10_Supervisor.py` con bandeja de revisión.
+- **Sesión 15**: frontera prod-like (`web` único puerto en local; Caddy 80/443
+  en cloud), token de servicio, contrato UI→OpenAPI (`scripts/check_contract.py`),
+  `503` para dependencia caída, kit EC2 sin desplegar, CI/CD con `deploy`
+  apagado (`vars.CD_ENABLED`), smoke de frontera/TLS y dump/restore del corpus.
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
 - **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,

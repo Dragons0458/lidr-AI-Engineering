@@ -32,7 +32,7 @@ async def search(request: Request, payload: RetrievalRequest) -> RetrievalResult
     if embedder is None:
         log.error("retrieval_failed", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     settings = get_settings()

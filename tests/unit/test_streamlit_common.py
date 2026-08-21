@@ -49,6 +49,24 @@ def test_format_api_error_guardrail_400() -> None:
     assert "Email address" in message
 
 
+def test_format_api_error_409_conflict() -> None:
+    request = httpx.Request(
+        "POST",
+        "http://localhost:8000/v1/estimate/agent/graph/x/resume",
+    )
+    response = httpx.Response(
+        409,
+        request=request,
+        json={"detail": "No pending human gate for this run."},
+    )
+    exc = httpx.HTTPStatusError("conflict", request=request, response=response)
+    message = format_api_error(exc, api_base_url="http://localhost:8000/api/v1")
+
+    assert "409" in message
+    assert "Conflicto" in message
+    assert "No pending human gate" in message
+
+
 def test_parse_error_detail_validation_list() -> None:
     request = httpx.Request("POST", "http://localhost:8000/api/v1/estimate")
     response = httpx.Response(
