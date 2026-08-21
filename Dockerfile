@@ -8,7 +8,7 @@
 # -----------------------------------------------------------------------------
 # Stage: builder
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
 
@@ -25,7 +25,7 @@ RUN uv run python -m spacy download es_core_news_md
 # -----------------------------------------------------------------------------
 # Stage: base (common runtime)
 # -----------------------------------------------------------------------------
-FROM python:3.11-slim AS base
+FROM python:3.14-slim AS base
 
 RUN groupadd --system appgroup && \
     useradd --system --gid appgroup --create-home appuser
