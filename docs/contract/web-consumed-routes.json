@@ -29,7 +29,9 @@
     { "client": "GraphFlow", "method": "post", "path": "/v1/estimate/agent/graph/{estimation_id}/proposal" },
     { "client": "SupervisorFlow", "method": "post", "path": "/v1/estimate/agent/supervisor" },
     { "client": "SupervisorFlow", "method": "post", "path": "/v1/estimate/agent/supervisor/{estimation_id}/resume" },
-    { "client": "SupervisorFlow", "method": "get", "path": "/v1/estimate/agent/supervisor/{estimation_id}/state" }
+    { "client": "SupervisorFlow", "method": "get", "path": "/v1/estimate/agent/supervisor/{estimation_id}/state" },
+    { "client": "Observabilidad", "method": "get", "path": "/v1/observability/metrics" },
+    { "client": "Observabilidad", "method": "get", "path": "/v1/observability/requests" }
   ],
   "probes": [
     { "consumer": "docker HEALTHCHECK", "method": "get", "path": "/health", "unauthenticated": true },

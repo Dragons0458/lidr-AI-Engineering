@@ -282,3 +282,62 @@ def resolve_sidebar_model(*, response_model: str | None = None) -> str:
     if response_model and response_model.strip() and response_model != "-":
         return response_model
     return env_display("PRIMARY_MODEL", "—")
+
+
+def fetch_observability_metrics(
+    api_root: str,
+    window_hours: int = 24,
+    *,
+    route: str | None = None,
+    timeout: float = 10.0,
+) -> dict[str, Any]:
+    """GET /v1/observability/metrics — dashboard vital signs."""
+    params: dict[str, Any] = {"window_hours": window_hours}
+    if route:
+        params["route"] = route
+    response = httpx.get(
+        f"{api_root.rstrip('/')}/v1/observability/metrics",
+        headers=service_api_headers(),
+        params=params,
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, dict):
+        raise ValueError("observability metrics payload is not an object")
+    return payload
+
+
+def fetch_observability_requests(
+    api_root: str,
+    *,
+    limit: int = 50,
+    timeout: float = 10.0,
+) -> list[dict[str, Any]]:
+    """GET /v1/observability/requests — latest instrumented estimate calls."""
+    response = httpx.get(
+        f"{api_root.rstrip('/')}/v1/observability/requests",
+        headers=service_api_headers(),
+        params={"limit": limit},
+        timeout=timeout,
+    )
+    response.raise_for_status()
+    payload = response.json()
+    if not isinstance(payload, list):
+        raise ValueError("observability requests payload is not a list")
+    return payload
+
+
+def load_latest_eval_report(reports_dir: Path | None = None) -> dict[str, Any] | None:
+    """Optional lab overlay: last evals/reports/eval_s16_*.json, if present."""
+    directory = reports_dir or (_PROJECT_ROOT / "evals" / "reports")
+    if not directory.is_dir():
+        return None
+    files = sorted(directory.glob("eval_s16_*.json"))
+    if not files:
+        return None
+    try:
+        payload = json.loads(files[-1].read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    return payload if isinstance(payload, dict) else None
