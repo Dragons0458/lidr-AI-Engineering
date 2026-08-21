@@ -1,0 +1,25 @@
+Session 16 — abstention, both arms (Fase 3)
+Captured 2026-08-21. Spends tokens.
+
+Command:
+
+  uv run python scripts/run_eval_s16.py --arm both --case S16-06 --label abstencion-s16-06 \
+    --base-url http://127.0.0.1:8000 --api-key "$ESTIMATE_API_KEY" --out evals/reports/
+
+First attempt (graph 502): GRAPH_CLASSIFIER_MODEL defaulted to gpt-5-mini and this
+OpenAI org is not verified for gpt-5*. After pointing GRAPH_* / recovery to
+gpt-4o-mini (and dropping unsupported Responses `reasoning` on that model), the
+graph arm completed.
+
+From the baseline-s16 full run (same golden sha256=35d3c3c503bc…, run_id=14071272):
+
+  == arm rag ==
+    S16-06 [rag] expected=0 range=(0, 0) predicted=264 abstained=False (explicit) → FAILED  (15997 ms)
+
+  == arm graph ==
+    S16-06 [graph] expected=0 range=(0, 0) predicted=4 abstained=False (proxy) → FAILED  (44813 ms)
+
+Neither arm abstained on a no-precedent brief. RAG invented 264 engineer-days
+(explicit confidence, not insufficient). Graph invented 4 days; the harness
+proxy did not fire (grounded_task_ratio was not 0 / confidence was not low
+without a match). This is the article-03 / live-session finding, not a harness bug.

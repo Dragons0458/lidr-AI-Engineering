@@ -122,7 +122,7 @@ Redis publicado en el puerto 6379 del host. Si desarrollas sin dev container, us
 
 Puertos reenviados: `8000` (API), `6379` (Redis), `8501` (Streamlit opcional).
 
-Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Grafo Agentes + Supervisor + Histórico RAG + Ajustes IA):
+Cliente Streamlit multipage (Home + Estimación + Conversación + RAG Lab + RAG Estimación + Agentes + Grafo Agentes + Supervisor + Histórico RAG + Observabilidad + Ajustes IA):
 
 ```bash
 uv run streamlit run streamlit_ui/home.py
@@ -204,11 +204,16 @@ Alternativa: levantar todo el stack con Compose (`docker compose up --build`) si
   en cloud), token de servicio, contrato UI→OpenAPI (`scripts/check_contract.py`),
   `503` para dependencia caída, kit EC2 sin desplegar, CI/CD con `deploy`
   apagado (`vars.CD_ENABLED`), smoke de frontera/TLS y dump/restore del corpus.
+- **Sesión 16**: calidad y observabilidad de producción. Golden set de 7 casos
+  (`evals/golden_set_s16.json`) + harness A/B rag/grafo (`scripts/run_eval_s16.py`,
+  gasta tokens, fuera de CI); instrumentación por petición (acumulador
+  `contextvars` + tabla `request_metrics`); panel Streamlit Observabilidad y
+  `GET /v1/observability/metrics`. Guía: [`docs/evaluation.md`](docs/evaluation.md).
 - Esquemas estructurados de solicitud/respuesta con validación de Pydantic.
 - Reporte de costo y uso de tokens basado en reglas de precios por modelo.
-- **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
+-   **Frontend Streamlit multipage**: Home, estimación, conversación, RAG Lab,
   RAG Estimación (wizard S12), Agentes, Grafo Agentes (wizard S13), Supervisor
-  (wizard S14), Histórico RAG, Corpus Index y Ajustes IA;
+  (wizard S14), Histórico RAG, Corpus Index, Observabilidad (S16) y Ajustes IA;
   persistencia SQLite (`estimations`, `chat_sessions`, `chunking_comparisons`,
   `agent_profiles`, `rag_estimation_runs`, `graph_estimation_runs`,
   `supervisor_estimation_runs`).
@@ -261,6 +266,7 @@ app/
       estimate_tasks.py          # POST /v1/estimate/tasks/hours (S10)
       estimate_graph.py          # POST /v1/estimate/agent/graph* (S13)
       estimate_supervisor.py     # POST /v1/estimate/agent/supervisor* (S14)
+      observability.py           # GET /v1/observability/metrics|requests (S16)
     config.py                    # GET/PUT /api/v1/config/models + /retrieval (S07/S10)
   domain/
     estimation_service.py        # Conductor: guardrails + cachés + LLM
@@ -274,7 +280,7 @@ app/
     prompts/                     # Plantillas Jinja versionadas
     persistence/                 # SQLAlchemy sync (S06) + async engine (S08)
       langgraph.py               # AsyncPostgresSaver pool + libpq URL (S13)
-    observability/               # Logfire bootstrap (S13)
+    observability/               # Logfire (S13) + usage accumulator + request metrics (S16)
     attachments/                 # Extracción PDF/DOCX
   generation/                    # Las 3 arquitecturas AI (no se importan entre sí)
     cag/                         # Caché exact-match + semántico
@@ -328,6 +334,9 @@ data/
 evals/
   golden_retrieval.json          # Golden set S10 (5 queries, ids S07-*)
   golden_generation.json         # Golden set S11 (5 briefs + ground_truth)
+  golden_set_s16.json            # Production golden set, engineer-days + abstention (S16)
+  production/                    # Pure grading/adapters/metrics for the S16 harness
+  reports/                       # eval_s16_<ts>.{json,md} (not CI)
   ragas_baseline_s11.json        # Baseline metrics for --gate (S11)
   RAGAS_BASELINE_S11.md          # Human-readable baseline table (S11)
   task_corpus_contradictions.json # 2 projects, same task name, different hours (S11)
@@ -356,6 +365,7 @@ scripts/
   preflight_s06.py
   demo_cleaning_s06.py
   demo_pii_s06.py
+  run_eval_s16.py                # Production eval harness (S16; spends tokens, not CI)
 streamlit_ui/
   home.py                        # Home (entrypoint multipage)
   common.py                      # Helpers compartidos (errores, API URL)
@@ -370,6 +380,7 @@ streamlit_ui/
     4_Ajustes_IA.py
     5_RAG_Estimacion.py          # Wizard S10 + hours_range + hallucination gate (S11)
     6_Corpus_Index.py            # Corpus stats + incremental index runs (S11)
+    11_Observabilidad.py         # Dashboard S16 (latencia p95, coste, errores)
 tests/unit/{api,domain,foundation,generation}/…
 ```
 
@@ -484,6 +495,9 @@ SUPERVISOR_GROUNDING_MAX_DISTANCE=0.55
 SUPERVISOR_OUT_OF_RANGE_FACTOR=2.0
 SUPERVISOR_PRIVILEGE_STRICT=false
 SUPERVISOR_AUDIT_ARGS_PREVIEW_CHARS=200
+# Session 16 — observability (per-request metrics; pruning is manual)
+METRICS_ENABLED=true
+METRICS_RETENTION_DAYS=30
 # Streamlit-only (not loaded by FastAPI Settings)
 STREAMLIT_DEFAULT_HOURLY_RATE_EUR=75
 STREAMLIT_AGENT_AVATAR_MAX_BYTES=2097152
@@ -531,6 +545,8 @@ Endpoints locales predeterminados:
 - `GET /v1/estimate/agent/graph/{estimation_id}/state` (snapshot, S13)
 - `POST /v1/estimate/agent/graph/stream` + `GET …/progress` (panel en vivo, S13)
 - `POST /v1/estimate/agent/graph/{estimation_id}/proposal` (propuesta comercial, S13)
+- `GET /v1/observability/metrics` (resumen latencia/coste/errores, S16)
+- `GET /v1/observability/requests` (filas por petición / join de coste del harness, S16)
 - `POST /embeddings/compare` (comparar estrategias de chunking + top-k por query, en memoria)
 - `GET /api/v1/config/models` / `PUT /api/v1/config/models` (overrides runtime Redis)
 - `GET /api/v1/config/retrieval` / `PUT /api/v1/config/retrieval` (toggles recuperación S10)
@@ -1267,6 +1283,71 @@ uv run pytest tests/unit/domain/test_supervisor_estimation.py \
   tests/unit/test_run_agent_s14.py -q
 ```
 
+## Sesión 16 — calidad y observabilidad en producción
+
+La Sesión 15 dejó el sistema vivo. Esta sesión le pone **ojos**: una vara para
+medir si estima bien (golden set + harness) y un monitor de constantes vitales
+de lo que pasa en producción (instrumentación + dashboard).
+
+Laboratorio (se lanza a mano, gasta tokens) vs producción (siempre puesto):
+
+```text
+evals/golden_set_s16.json
+        │
+        ▼
+scripts/run_eval_s16.py  ── rag ──► POST /v1/estimate/from-transcript
+                     └── graph ► POST /v1/estimate/agent/graph + resume ×2
+                                      │
+                     middleware métricas + acumulador contextvars
+                                      │
+              structlog + Logfire     └─► request_metrics (Alembic 0006)
+                                              │
+evals/reports/eval_s16_<ts>.{json,md}         ▼
+                                    GET /v1/observability/metrics
+                                              │
+                                              ▼
+                                    streamlit_ui/pages/11_Observabilidad.py
+```
+
+| Pieza | Ubicación |
+|-------|-----------|
+| Golden set (7 casos, 2 abstención) | `evals/golden_set_s16.json` |
+| Lógica pura (testeable, sin red) | `evals/production/` |
+| Harness CLI | `scripts/run_eval_s16.py` |
+| Acumulador de uso | `app/foundation/observability/usage.py` |
+| Middleware + persistencia | `app/main.py`, `request_metrics`, Alembic `0006` |
+| API | `GET /v1/observability/metrics` y `/requests` |
+| Dashboard | `streamlit_ui/pages/11_Observabilidad.py` |
+| Cómo se lanza y se lee | [`docs/evaluation.md`](docs/evaluation.md) |
+
+El harness es un A/B de arquitecturas en laboratorio. El grafo **no** tiene
+`confidence=insufficient`; el informe etiqueta el proxy (`abstention_signal:
+proxy`). El veredicto calidad/coste se escribe a mano en
+`exercises/session-16/README.md`.
+
+```bash
+# Validate the measuring stick (no tokens)
+uv run python scripts/run_eval_s16.py --dry-run
+
+# Real eval — SPENDS TOKENS, not CI
+uv run python scripts/run_eval_s16.py --arm both --label baseline-s16 --out evals/reports/
+```
+
+```bash
+METRICS_ENABLED=true
+METRICS_RETENTION_DAYS=30
+```
+
+Tests (offline):
+
+```bash
+uv run pytest tests/unit/evals tests/unit/foundation/test_usage_accumulator.py \
+  tests/unit/foundation/test_request_metrics.py \
+  tests/unit/api/test_observability_metrics.py \
+  tests/unit/test_streamlit_observability.py -q
+uv run python scripts/check_contract.py
+```
+
 ## Ejecutar la app de Streamlit
 
 ```bash
@@ -1286,6 +1367,7 @@ La app multipage incluye:
 | **Agentes** | Perfiles handwritten (persona, knobs, avatar, default) |
 | **Grafo Agentes** | Wizard S13 multiagente + gates humanos + actividad en vivo |
 | **Supervisor** | Wizard S14: bandeja, router LLM, competición, sandbox, review HITL |
+| **Observabilidad** | Panel S16: latencia p95, coste/petición, tasa de error (`/v1/observability`) |
 | **Histórico RAG** | Runs persistentes, restauración y snapshots de perfiles |
 | **Ajustes IA** | `GET/PUT /api/v1/config/models` + `/config/retrieval` (runtime Redis) |
 

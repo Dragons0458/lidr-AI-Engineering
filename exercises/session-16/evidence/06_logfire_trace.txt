@@ -1,0 +1,8 @@
+Session 16 — Logfire trace (optional)
+
+Skipped: LOGFIRE_TOKEN is unset in the local .env. Logfire spans run locally
+(send_to_logfire="if-token-present") and do not export, so there is no hosted
+trace UI to screenshot.
+
+Correlate instead via X-Request-ID on the Observabilidad table
+(e.g. s16-14071272-S16-07-1) and `estimate_request_metrics` in ai-service logs.

@@ -1,0 +1,47 @@
+Session 16 — Fase 0 preflight
+Captured 2026-08-21 against the live local stack (docker compose + override).
+Auth: X-API-Key = ESTIMATE_API_KEY (demo key; value not recorded here).
+
+LANGGRAPH_ENABLED=true
+langgraph_runtime_ready (ai-service logs, 2026-08-21T21:14:24Z)
+POST /v1/estimate/agent/graph with empty body → HTTP 422 (runtime up; 503 would mean skipped)
+
+========================================================================
+1) GET /health/ready
+========================================================================
+HTTP 200
+{"status":"ready","checks":{"postgres":"ok","redis":"ok"},"timestamp":"2026-08-21T21:14:56.644429"}
+
+========================================================================
+2) GET /embeddings/index/stats
+========================================================================
+HTTP 200
+{"collections":[{"collection":"budget","documents":78,"chunks":1577,"hnsw_indexed":true},{"collection":"transcript","documents":5,"chunks":11,"hnsw_indexed":true},{"collection":"technical_doc","documents":4,"chunks":8,"hnsw_indexed":true}],"total_chunks":1596}
+
+Acceptance: total_chunks=1596 > 0; collection "budget" populated (78 documents / 1577 chunks).
+No ingest this run.
+
+Alembic: 0005_session11_hnsw_multi_index → 0006_session16_request_metrics (applied via
+docker compose run migrate with bind-mounted alembic/).
+
+========================================================================
+3) GET /api/v1/config/models
+========================================================================
+HTTP 200
+{"models":{"PRIMARY_MODEL":{"effective":"gemini/gemini-2.5-flash","default":"gemini/gemini-2.5-flash","overridden":false},"FALLBACK_MODEL":{"effective":"gpt-4o-mini","default":"gpt-4o-mini","overridden":false},"CRITIC_MODEL":{"effective":"gpt-4o-mini","default":"gpt-4o-mini","overridden":false},"COMPRESSION_MODEL":{"effective":"gemini/gemini-2.5-flash","default":"gemini/gemini-2.5-flash","overridden":false},"PROPOSITIONAL_CHUNKER_MODEL":{"effective":"gpt-4o-mini","default":"gpt-4o-mini","overridden":false},"CONTEXTUAL_CHUNKER_MODEL":{"effective":"claude-sonnet-4-5","default":"claude-sonnet-4-5","overridden":false},"HALLUCINATION_JUDGE_MODEL":{"effective":"gpt-5-mini","default":"gpt-5-mini","overridden":false},"AUGMENTATION_MODEL":{"effective":"gpt-5-mini","default":"gpt-5-mini","overridden":false}},"available_models":["gpt-4o-mini","gpt-4o","gpt-5","gpt-5-mini","claude-haiku-4-5-20251001","claude-sonnet-4-5"],"embedding_model":"text-embedding-3-small","embedding_model_note":"Read-only: changing it would invalidate all stored vectors."}
+
+Effective generation path (from container .env, not this runtime-config payload):
+  LLM_PROVIDER=google
+  REFORMULATION_MODEL=gemini/gemini-2.5-flash
+  GENERATION_MODEL=gemini/gemini-2.5-flash
+  AGENT_MODEL=gpt-4o-mini
+  GRAPH_CLASSIFIER_MODEL=gpt-4o-mini
+  GRAPH_ANALYSIS_MODEL=gpt-4o-mini
+  GRAPH_PROPOSAL_MODEL=gpt-4o-mini
+  (gpt-5 / gpt-5-mini 404 on this OpenAI org: "organization must be verified")
+
+========================================================================
+4) GET /api/v1/config/retrieval
+========================================================================
+HTTP 200
+{"retrieval":{"RETRIEVAL_SEARCH_MODE":{"effective":"vector","default":"vector","overridden":false},"RERANKER_ENABLED":{"effective":false,"default":false,"overridden":false},"RETRIEVAL_ROUTING_ENABLED":{"effective":true,"default":true,"overridden":false},"QUERY_TRANSFORM_ENABLED":{"effective":true,"default":true,"overridden":false},"TEMPORAL_DECAY_ENABLED":{"effective":false,"default":false,"overridden":false},"TASK_HOURS_TOP_K":{"effective":5,"default":5,"overridden":false},"TASK_HOURS_DISTANCE_THRESHOLD":{"effective":0.45,"default":0.45,"overridden":false},"HALLUCINATION_GATE_ENABLED":{"effective":true,"default":true,"overridden":false},"AUGMENTATION_ENABLED":{"effective":true,"default":true,"overridden":false},"SYNTHESIS_ENABLED":{"effective":true,"default":true,"overridden":false}},"reranker_model":"cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"}
