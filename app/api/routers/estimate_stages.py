@@ -79,7 +79,7 @@ async def retrieve(request: Request, payload: RetrievalRequest) -> RetrievalResu
     if embedder is None:
         log.error("stage_failed", stage="retrieval", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     try:

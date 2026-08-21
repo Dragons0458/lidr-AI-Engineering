@@ -111,12 +111,12 @@ def test_search_empty_corpus_returns_200_with_no_results():
     assert response.json()["results"] == []
 
 
-def test_search_retriever_unavailable_returns_500():
+def test_search_retriever_unavailable_returns_503():
     app.dependency_overrides[get_semantic_retriever] = lambda: None
 
     response = TestClient(app).post("/search", json={"query": "anything", "k": 5})
 
-    assert response.status_code == 500
+    assert response.status_code == 503
     assert response.json()["detail"] == "Embedding service is not available."
 
 

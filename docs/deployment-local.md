@@ -81,12 +81,27 @@ confidence and sources visible
 
 ```bash
 # Requires corpus (check 4a). Idempotent key avoids a second bill on retry.
-docker compose -f docker-compose.yml exec web python scripts/smoke_test_s15.py
+docker compose -f docker-compose.yml exec web \
+  python scripts/smoke_test_s15.py \
+    --base-url http://localhost:8501 \
+    --ai-url http://ai-service:8000
 ```
+
+Frontier-only (no tokens): add `--skip-estimation`. The script also checks
+`/_stcore/health`, the home model badge (`web → ai-service`), closed private
+ports, and `POST /api/v1/estimate` without a key → 401.
 
 Must print `confidence` ∈ {high,medium,low}, `sources=N` with N>0, and
 `days=…`. If you see `insufficient`, seed the corpus first — that is not a
 frontier failure.
+
+Contract (no server, no LLM):
+
+```bash
+uv run python scripts/check_contract.py
+uv run pytest -q tests/api/test_contract_v1.py tests/test_failure_modes_s15.py
+```
+
 
 ### 5. Restart keeps data
 

@@ -1,0 +1,38 @@
+{
+  "routes": [
+    { "client": "Estimacion", "method": "post", "path": "/api/v1/estimate" },
+    { "client": "StreamApp", "method": "post", "path": "/api/v1/estimate/stream" },
+    { "client": "Conversacion", "method": "post", "path": "/api/v1/sessions" },
+    { "client": "Conversacion", "method": "get", "path": "/api/v1/sessions/{session_id}" },
+    { "client": "Conversacion", "method": "post", "path": "/api/v1/sessions/{session_id}/estimate" },
+    { "client": "Conversacion", "method": "post", "path": "/api/v1/sessions/{session_id}/estimate-acb" },
+    { "client": "Common", "method": "get", "path": "/api/v1/config/models" },
+    { "client": "Ajustes_IA", "method": "put", "path": "/api/v1/config/models" },
+    { "client": "Ajustes_IA", "method": "get", "path": "/api/v1/config/retrieval" },
+    { "client": "Ajustes_IA", "method": "put", "path": "/api/v1/config/retrieval" },
+    { "client": "RAG_Lab", "method": "post", "path": "/embeddings/compare" },
+    { "client": "Rag", "method": "get", "path": "/embeddings/index/stats" },
+    { "client": "Rag", "method": "post", "path": "/embeddings/index/runs" },
+    { "client": "Rag", "method": "get", "path": "/embeddings/index/jobs/{job_id}" },
+    { "client": "Rag", "method": "post", "path": "/v1/estimate/stages/verify" },
+    { "client": "RAG_Estimacion", "method": "post", "path": "/v1/estimate/from-transcript" },
+    { "client": "RAG_Estimacion", "method": "post", "path": "/v1/estimate/stages/reformulate" },
+    { "client": "RAG_Estimacion", "method": "post", "path": "/v1/estimate/stages/structure" },
+    { "client": "RAG_Estimacion", "method": "post", "path": "/v1/estimate/tasks/hours" },
+    { "client": "AgentEstimation", "method": "post", "path": "/v1/estimate/agent/structure" },
+    { "client": "AgentEstimation", "method": "post", "path": "/v1/estimate/agent/hours" },
+    { "client": "GraphFlow", "method": "post", "path": "/v1/estimate/agent/graph" },
+    { "client": "GraphFlow", "method": "post", "path": "/v1/estimate/agent/graph/stream" },
+    { "client": "GraphFlow", "method": "post", "path": "/v1/estimate/agent/graph/{estimation_id}/resume-stream" },
+    { "client": "GraphFlow", "method": "get", "path": "/v1/estimate/agent/graph/{estimation_id}/state" },
+    { "client": "GraphFlow", "method": "get", "path": "/v1/estimate/agent/graph/{estimation_id}/progress" },
+    { "client": "GraphFlow", "method": "post", "path": "/v1/estimate/agent/graph/{estimation_id}/proposal" },
+    { "client": "SupervisorFlow", "method": "post", "path": "/v1/estimate/agent/supervisor" },
+    { "client": "SupervisorFlow", "method": "post", "path": "/v1/estimate/agent/supervisor/{estimation_id}/resume" },
+    { "client": "SupervisorFlow", "method": "get", "path": "/v1/estimate/agent/supervisor/{estimation_id}/state" }
+  ],
+  "probes": [
+    { "consumer": "docker HEALTHCHECK", "method": "get", "path": "/health", "unauthenticated": true },
+    { "consumer": "docker HEALTHCHECK", "method": "get", "path": "/health/ready", "unauthenticated": true }
+  ]
+}

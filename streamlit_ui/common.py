@@ -203,6 +203,12 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
                 "_Configura `ESTIMATE_API_KEY` / `AI_SERVICE_TOKEN` "
                 "(y `RETRIEVAL_API_KEY` para búsqueda) en `.env` o secrets._"
             )
+        if status == 409:
+            return (
+                "**Conflicto (409)** — la ejecución no está en un punto que admita esa acción "
+                "(no hay gate pendiente, o el trabajo ya existe).\n\n"
+                f"{detail}"
+            )
         if status == 422:
             return (
                 "**Solicitud rechazada (422)** — la API no pudo validar el mensaje.\n\n"
@@ -222,8 +228,8 @@ def format_api_error(exc: httpx.HTTPError, *, api_base_url: str) -> str:
             return f"**Error del pipeline LLM (502)**\n\n{detail}"
         if status == 503:
             return (
-                "**Servicio no listo (503)** — una dependencia (Postgres/Redis) "
-                "no responde.\n\n"
+                "**Servicio no listo (503)** — una dependencia "
+                "(Postgres, Redis, embedder u índice de corpus) no responde.\n\n"
                 f"{detail}\n\n"
                 "_Revisa `GET /health/ready` y el runbook "
                 "`docs/runbooks/ai-service-no-responde.md`._"

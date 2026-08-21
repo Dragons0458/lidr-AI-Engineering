@@ -1,0 +1,14 @@
+# Session 15 failure-mode fixture 3 — localhost vs Compose DNS.
+#
+# Symptom: the UI loads, every API call fails with
+# `Connection refused localhost:8000`.
+# Cause: inside the `web` container, `localhost` is *that* container.
+# Streamlit must call `http://ai-service:8000/api/v1` (Compose service name).
+#
+# Compare with the real `docker-compose.yml` `web.environment`.
+
+services:
+  web:
+    environment:
+      ESTIMATION_API_BASE_URL: http://localhost:8000/api/v1
+      AI_SERVICE_URL: http://localhost:8000

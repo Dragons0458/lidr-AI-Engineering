@@ -3,6 +3,8 @@ repos:
     rev: v5.0.0
     hooks:
       - id: check-yaml
+        # Compose v2.24 `!reset` is not a stock YAML tag (prod ports/build replace).
+        exclude: (^|/)docker-compose\.prod\.yml$
       - id: end-of-file-fixer
       - id: trailing-whitespace
 

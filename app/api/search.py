@@ -28,7 +28,7 @@ async def search(
     if retriever is None:
         log.error("search_failed", reason="retriever_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     try:

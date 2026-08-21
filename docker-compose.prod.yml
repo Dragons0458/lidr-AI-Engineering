@@ -1,0 +1,91 @@
+# =============================================================================
+# Production override — apply ALWAYS together with the base file:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+#
+# Local prod-like publishes `web:8501`. Cloud production publishes `caddy`
+# (80/443) and keeps `web` internal. Compose *merges* lists, so `web.ports`
+# must be `!reset []` (Compose v2.24+) or 8501 stays on the host.
+# =============================================================================
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  caddy:
+    image: caddy:2.8-alpine
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      APP_DOMAIN: ${APP_DOMAIN:?Set APP_DOMAIN to the public hostname (A record must exist before first boot)}
+      CADDY_BASIC_AUTH_USER: ${CADDY_BASIC_AUTH_USER:-}
+      CADDY_BASIC_AUTH_HASH: ${CADDY_BASIC_AUTH_HASH:-}
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:80"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging: *default-logging
+    restart: unless-stopped
+    networks: [estimador_net]
+
+  web:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:?Set IMAGE_OWNER}/estimador-web:${IMAGE_TAG:-latest}"
+    build: !reset null
+    ports: !reset []
+    environment:
+      APP_ENV: production
+    command:
+      [
+        "streamlit",
+        "run",
+        "streamlit_ui/home.py",
+        "--server.address=0.0.0.0",
+        "--server.port=8501",
+        "--server.enableCORS=false",
+        "--server.enableXsrfProtection=true",
+        "--server.headless=true",
+      ]
+    logging: *default-logging
+
+  ai-service:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:?Set IMAGE_OWNER}/estimador-ai-service:${IMAGE_TAG:-latest}"
+    build: !reset null
+    environment:
+      APP_ENV: production
+      LOG_LEVEL: INFO
+    logging: *default-logging
+
+  migrate:
+    image: "${IMAGE_REGISTRY:-ghcr.io}/${IMAGE_OWNER:?Set IMAGE_OWNER}/estimador-ai-service:${IMAGE_TAG:-latest}"
+    build: !reset null
+    logging: *default-logging
+
+  postgres:
+    shm_size: 256mb
+    command: >
+      postgres
+      -c shared_buffers=256MB
+      -c effective_cache_size=768MB
+      -c work_mem=16MB
+      -c maintenance_work_mem=192MB
+      -c max_parallel_maintenance_workers=1
+    logging: *default-logging
+
+  redis:
+    image: redis/redis-stack-server:7.4.0-v0
+    logging: *default-logging
+
+volumes:
+  caddy_data:
+  caddy_config:

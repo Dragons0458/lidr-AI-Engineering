@@ -42,7 +42,7 @@ async def structure(request: Request, payload: AgentStructureRequest) -> Generat
     """Propose a module/task structure without tools, sources, or hours."""
     client = get_async_openai_client()
     if client is None:
-        raise HTTPException(status_code=500, detail="OpenAI client is not available.")
+        raise HTTPException(status_code=503, detail="OpenAI client is not available.")
     settings = get_settings()
     try:
         with log_stage("agent_structure", get_request_id(request)):
@@ -72,7 +72,7 @@ async def hours(request: Request, payload: AgentHoursRequest) -> TaskHoursResult
     """Estimate every task deterministically and recover only flagged rows."""
     if get_embedder() is None:
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
     settings = get_settings()
     runtime = get_runtime_retrieval_config()

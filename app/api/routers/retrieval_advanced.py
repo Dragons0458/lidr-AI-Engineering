@@ -103,7 +103,7 @@ async def advanced_search(
     if embedder is None:
         log.error("advanced_retrieval_failed", reason="embedder_unavailable")
         raise HTTPException(
-            status_code=500, detail="Embedding service is not available."
+            status_code=503, detail="Embedding service is not available."
         )
 
     settings = get_settings()

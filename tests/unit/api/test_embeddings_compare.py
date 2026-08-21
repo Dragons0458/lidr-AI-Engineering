@@ -86,7 +86,7 @@ def test_compare_unknown_strategy_returns_400(monkeypatch):
     assert response.status_code == 400
 
 
-def test_compare_without_embedder_returns_500():
+def test_compare_without_embedder_returns_503():
     app = FastAPI()
     app.include_router(router)
     app.dependency_overrides[get_embedder] = lambda: None
@@ -95,4 +95,4 @@ def test_compare_without_embedder_returns_500():
         "/embeddings/compare",
         json={"budgets": [_sample_budget()]},
     )
-    assert response.status_code == 500
+    assert response.status_code == 503

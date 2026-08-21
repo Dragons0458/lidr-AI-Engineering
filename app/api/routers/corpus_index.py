@@ -92,7 +92,7 @@ def create_index_run(
 ) -> IndexRunResponse:
     if service is None:
         raise HTTPException(
-            status_code=500, detail="Corpus index service is not available."
+            status_code=503, detail="Corpus index service is not available."
         )
 
     repo = JobsRepository(session)

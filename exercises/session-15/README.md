@@ -38,6 +38,18 @@ Dev (ports + reload): `docker compose up --build`.
 ## Docs
 
 - [`docs/deployment-local.md`](../../docs/deployment-local.md) — five checks
+- [`docs/deploy-ec2.md`](../../docs/deploy-ec2.md) — cloud kit (not executed)
+- [`docs/ci-cd.md`](../../docs/ci-cd.md) — pipeline
 - Runbooks under [`docs/runbooks/`](../../docs/runbooks/)
 - ADRs under [`docs/adr/`](../../docs/adr/)
 - [`docs/architecture.md`](../../docs/architecture.md) — topology
+
+## Failure modes (Block 1)
+
+Five fixtures with the defect inside the file. Walk them in order:
+build (1) → boot (2–3) → “it works” (4–5). Details in
+[`failure_modes/README.md`](failure_modes/README.md).
+
+```bash
+uv run pytest -q tests/test_failure_modes_s15.py -v
+```

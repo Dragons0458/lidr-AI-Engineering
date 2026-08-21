@@ -31,3 +31,6 @@ planning/
 
 # Streamlit frontend SQLite (local history)
 streamlit_ui/data/*.db
+
+# Corpus dumps (paid embeddings — never commit)
+backups/

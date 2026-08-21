@@ -1,0 +1,34 @@
+# Production Caddyfile. Streamlit stays behind this proxy; do not publish :8501.
+#
+# WebSocket: reverse_proxy forwards `/_stcore/stream` transparently.
+# Do NOT add header_up Connection/Upgrade by hand.
+#
+# Timeouts: graph / supervisor estimates run for minutes. The proxy must be
+# more patient than the app (600s) or it cuts a request the backend still serves.
+#
+# Auth: Streamlit has no login. basic_auth is the public gate. Hash with
+# `caddy hash-password`; never put a plaintext password in this file.
+
+{$APP_DOMAIN} {
+	basic_auth {
+		{$CADDY_BASIC_AUTH_USER} {$CADDY_BASIC_AUTH_HASH}
+	}
+	reverse_proxy web:8501 {
+		header_up X-Forwarded-Proto https
+		transport http {
+			read_timeout 600s
+			write_timeout 600s
+		}
+	}
+	encode zstd gzip
+	log {
+		output stdout
+		format json
+	}
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		X-Content-Type-Options "nosniff"
+		X-Frame-Options "SAMEORIGIN"
+		-Server
+	}
+}

@@ -1,0 +1,33 @@
+# Session 15 failure-mode fixture 2 — wrong boot order.
+#
+# Symptom: `ai-service` crashes on the first `up`, works on the second.
+# Cause: `depends_on` as a list waits for *creation*, not *readiness*.
+# `migrate` has no `service_completed_successfully`, so Alembic may still
+# be running (or may not have started) when the API opens its pool.
+#
+# Compare with the real `docker-compose.yml`: every `depends_on` is a mapping
+# with `condition`, and each `service_healthy` dependency has a `healthcheck`.
+
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    environment:
+      POSTGRES_USER: estimator
+      POSTGRES_PASSWORD: estimator
+      POSTGRES_DB: estimator
+
+  redis:
+    image: redis/redis-stack:7.4.0-v0
+
+  migrate:
+    image: example/estimador-ai-service:latest
+    command: ["alembic", "upgrade", "head"]
+    depends_on:
+      - postgres
+
+  ai-service:
+    image: example/estimador-ai-service:latest
+    depends_on:
+      - postgres
+      - redis
+      - migrate
